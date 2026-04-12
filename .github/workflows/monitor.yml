@@ -1,0 +1,62 @@
+name: CSFloat Hourly Monitor
+on:
+  workflow_dispatch:
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install git-crypt
+        run: sudo apt-get install -y git-crypt
+
+      - name: Unlock git-crypt
+        run: |
+          echo "${{ secrets.GIT_CRYPT_KEY }}" | base64 -d > git-crypt-key
+          git-crypt unlock git-crypt-key
+          rm git-crypt-key
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+      
+      - name: Run the monitor script
+        env:
+          CSFLOAT_API_KEY: ${{ secrets.CSFLOAT_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python main.py > /dev/null 2>&1
+      
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          mkdir -p data
+          touch data/state.json
+          
+          git add data/state.json listings.py
+          
+          if git diff --staged --quiet; then
+            echo "No changes to save."
+          else
+            git stash push -m "workflow changes"
+            git pull --rebase origin master
+            git stash pop
+            git add data/state.json listings.py
+            git commit -m "Auto-update: market prices and bid sync [skip ci]"
+            git push origin master
+          fi
