@@ -1,5 +1,4 @@
 *.py filter=git-crypt diff=git-crypt
 *.json filter=git-crypt diff=git-crypt
 *.env filter=git-crypt diff=git-crypt
-*.md filter=git-crypt diff=git-crypt
 *.txt filter=git-crypt diff=git-crypt
