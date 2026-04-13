@@ -1,15 +1,15 @@
 ### Auto-Lister
 ```mermaid
 flowchart TD
-    A["⏱️ Cron Scheduler"] --> B["🐍 Python Controller"]
-    B --> C["🌐 Marketplace API"]
+    A["Cron Scheduler"] --> B["Python Controller"]
+    B --> C["Marketplace API"]
     C --> D{"Listing Active?"}
-    D -- Yes --> E["📝 Log Expiry Time"]
-    D -- No --> F["📤 Post New Listing"]
-    E --> G["💾 JSON State Persistence"]
+    D -- Yes --> E["Log Expiry Time"]
+    D -- No --> F[" Post New Listing"]
+    E --> G["JSON State Persistence"]
     F --> G
-    G --> H["🔔 Discord Notification"]
-    G --> I["☁️ GitHub State Sync"]
+    G --> H["Discord Notification"]
+    G --> I["GitHub State Sync"]
     I --> B
 ```
 
