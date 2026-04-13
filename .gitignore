@@ -4,4 +4,3 @@ __pycache__/
 .idea/
 git-crypt-key
 git-crypt-key.b64
-.env
