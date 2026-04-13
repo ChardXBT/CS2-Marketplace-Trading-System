@@ -93,12 +93,3 @@ flowchart TD
 - Repository encrypted at rest
 
 ---
-
-## Lessons Learned
-
-- Marketplace APIs can block requests from datacenter IP ranges, infrastructure choices matter early
-- Delete-then-recreate patterns (no PATCH endpoint) require careful error handling to avoid orphaned state
-- Regex-based config rewriting is fragile, JSON/structured config is the right long-term approach
-- Rate limiting is not just about request frequency, cumulative bid volume over time windows matters too
-
----
