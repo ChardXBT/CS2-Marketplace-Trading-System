@@ -22,9 +22,9 @@ flowchart TD
 |---|---|
 | **Auto-Outbid** | Detects when a competitor beats your bid and automatically raises by exactly one price-tier increment |
 | **Smart Underbid** | When winning by too much, lowers the bid to preserve capital while staying on top |
-| **Min/Max Enforcement** | Configurable floor and ceiling per item — never bids outside the defined range |
+| **Min/Max Enforcement** | Configurable floor and ceiling per item, never bids outside the defined range |
 | **Duplicate Cleanup** | On startup, finds and removes identical duplicate buy orders |
-| **Stale Order Sync** | Cross-checks stored order IDs against the live API — recreates any that were filled or cancelled |
+| **Stale Order Sync** | Cross-checks stored order IDs against the live API, recreates any that were filled or cancelled |
 | **Adaptive Rate Limiting** | Exponential backoff with automatic recovery on API rate limit responses |
 | **Cooldown System** | Automatic 8-hour cooldown with state preservation if bid limits are hit |
 | **Discord Alerts** | Webhook notifications for bid updates, outbid events, and cooldown triggers |
@@ -37,7 +37,7 @@ flowchart TD
 |---|---|
 | **Auto-Listing** | Detects unlisted inventory items and posts them to auction immediately |
 | **Auto-Relist** | Monitors auction expiry and relists items within minutes of expiry |
-| **State Persistence** | Full state committed to GitHub after every run — recoverable without a database |
+| **State Persistence** | Full state committed to GitHub after every run, recoverable without a database |
 | **Discord Embeds** | Rich embed summaries sent after every cycle |
 | **24h Auction Cycle** | Items run as 24-hour auctions on a continuous loop |
 
@@ -54,9 +54,9 @@ flowchart TD
 
 ## Lessons Learned
 
-- Marketplace APIs can block requests from datacenter IP ranges — infrastructure choices matter early
+- Marketplace APIs can block requests from datacenter IP ranges, infrastructure choices matter early
 - Delete-then-recreate patterns (no PATCH endpoint) require careful error handling to avoid orphaned state
-- Regex-based config rewriting is fragile — JSON/structured config is the right long-term approach
-- Rate limiting is not just about request frequency — cumulative bid volume over time windows matters too
+- Regex-based config rewriting is fragile, JSON/structured config is the right long-term approach
+- Rate limiting is not just about request frequency, cumulative bid volume over time windows matters too
 
 ---
