@@ -48,7 +48,7 @@ flowchart TD
 - All credentials loaded from environment variables, never hardcoded
 - API keys stored as GitHub Actions secrets, never exposed in logs
 - Full output silenced in CI to prevent data leakage
-- Repository encrypted at rest — source files are not publicly readable
+- Repository encrypted at rest
 
 ---
 
