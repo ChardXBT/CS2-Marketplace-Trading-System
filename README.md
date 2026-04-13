@@ -1,3 +1,45 @@
+### Bid Tracker
+```mermaid
+flowchart TD
+    A["Cron Trigger"] --> B["Load State and Config"]
+    B --> C["Fetch Active Orders\n(Paginated API)"]
+    C --> D["Startup Reconciliation\n(Dedup + Stale Sync)"]
+    D --> E["Thread Pool\n(Parallel Item Processing)"]
+    
+    E --> F["Item Worker"]
+    
+    F --> G{"Order\nExists?"}
+    G -- No --> H["Recreate Order"]
+    G -- Yes --> I["Fetch Competitor Bids"]
+    H --> I
+    
+    I --> J{"Market\nState?"}
+    
+    J -- "No Competitors" --> K["Drop to Floor Price"]
+    J -- "Winning by too much" --> L["Underbid Logic\n(Capital Optimisation)"]
+    J -- "Outbid" --> M{"Within\nMax Ceiling?"}
+    J -- "Winning optimally" --> N["No Action"]
+    
+    M -- Yes --> O["Calculate Optimal\nCounter-Bid"]
+    M -- No --> P["Hold at Ceiling"]
+    
+    O --> Q["Delete + Recreate\nOrder at New Price"]
+    K --> Q
+    L --> Q
+    
+    Q --> R{"API\nResponse?"}
+    R -- "429 Rate Limited" --> S["Cooldown System\n(State Preserved)"]
+    R -- "Success" --> T["Confirm New Position"]
+    R -- "Error" --> U["Restore Attempt"]
+    
+    T --> V["Persist State"]
+    S --> V
+    U --> V
+    
+    V --> W["Discord Alert\n(Status Changes Only)"]
+    W --> X["Rewrite Config\nin Place"]
+    X --> Y["Commit and Push\nto GitHub"]
+```
 ### Auto-Lister
 ```mermaid
 flowchart TD
