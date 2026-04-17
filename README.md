@@ -83,6 +83,9 @@ flowchart TD
 | **Discord Embeds** | Rich embed summaries sent after every cycle |
 | **24h Auction Cycle** | Items run as 24-hour auctions on a continuous loop |
 
+### Extra
+| **Skinport** | Intergrated bot logic to Skinport to auto scan and report (via discord webhooks) additional listings
+
 ---
 
 ## Security
