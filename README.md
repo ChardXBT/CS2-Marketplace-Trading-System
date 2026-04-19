@@ -73,6 +73,8 @@ flowchart TD
 | **Parallel Processing** | Concurrent item processing with per-item thread locks to prevent race conditions |
 | **Watchdog Timer** | Background thread kills the process if runtime exceeds the safety threshold |
 | **Self-Updating Config** | Rewrites item config in-place after each run with updated prices and order IDs |
+| **Float Filter** | Per-item float_value cap (FloatValue <= X) or float_exact for targeting specific glitched floats (FloatValue == X) |
+| **Souvenir Filter** | Optional souvenir: True flag restricts buy orders to souvenir-only items |
 
 ### Auto-Lister
 | Feature | Description |
