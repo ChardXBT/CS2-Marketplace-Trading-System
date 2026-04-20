@@ -43,14 +43,14 @@ jobs:
       - name: Send logs to Discord
         if: always()
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
         run: |
           python3 << 'EOF'
           import requests
           import time
           import os
 
-          webhook = os.environ["DISCORD_WEBHOOK_URL"]
+          webhook = os.environ["DISCORD_LOG_WEBHOOK_URL"]
 
           with open("/tmp/bot_output.txt", "r") as f:
               log = f.read()
@@ -58,7 +58,6 @@ jobs:
           if not log.strip():
               log = "(no output)"
 
-          # Split into 1800 char chunks
           chunks = [log[i:i+1800] for i in range(0, len(log), 1800)]
           total = len(chunks)
 
@@ -92,8 +91,6 @@ jobs:
               if not sent:
                   print(f"Chunk {i+1} failed after all retries — skipping")
 
-              # Conservative delay between chunks
-              # Longer wait every 5 messages to respect Discord's per-webhook burst limit
               if (i + 1) % 5 == 0:
                   print("Burst pause — waiting 30s...")
                   time.sleep(30)
