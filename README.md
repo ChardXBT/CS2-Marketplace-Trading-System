@@ -88,7 +88,7 @@ flowchart TD
 | **Automatic Price Decreaser** | Optional: Select items will now decrease by Y cents up to a price user sets. Updated every 24h on new listing |
 
 ### Extra
-| **Skinport** | Intergrated bot logic to Skinport to auto scan and report (via discord webhooks) additional listings
+| **Skinport** | Intergrated bot logic to Skinport to auto scan and report (via discord webhooks) additional listings, more profit
 
 ---
 
