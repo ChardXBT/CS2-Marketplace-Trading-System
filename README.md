@@ -75,6 +75,7 @@ flowchart TD
 | **Self-Updating Config** | Rewrites item config in-place after each run with updated prices and order IDs |
 | **Float Filter** | Per-item float_value cap (FloatValue <= X) or float_exact for targeting specific glitched floats (FloatValue == X) |
 | **Souvenir Filter** | Optional souvenir: True flag restricts buy orders to souvenir-only items |
+| **Aggro Bidding** |If select listings are constantly getting outbid, after X times, it will jump the bid to max bid | 
 
 ### Auto-Lister
 | Feature | Description |
@@ -84,6 +85,7 @@ flowchart TD
 | **State Persistence** | Full state committed to GitHub after every run, recoverable without a database |
 | **Discord Embeds** | Rich embed summaries sent after every cycle |
 | **24h Auction Cycle** | Items run as 24-hour auctions on a continuous loop |
+| **Automatic Price Decreaser** | Optional: Select items will now decrease by Y cents up to a price user sets. Updated every 24h on new listing |
 
 ### Extra
 | **Skinport** | Intergrated bot logic to Skinport to auto scan and report (via discord webhooks) additional listings
