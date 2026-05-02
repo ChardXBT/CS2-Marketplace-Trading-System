@@ -45,7 +45,7 @@ jobs:
         env:
           DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
         run: |
-          python3 << 'EOF'
+          python << 'EOF'
           import requests
           import time
           import os
