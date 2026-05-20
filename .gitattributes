@@ -3,3 +3,4 @@
 *.env filter=git-crypt diff=git-crypt
 *.txt filter=git-crypt diff=git-crypt
 data/** filter=git-crypt diff=git-crypt
+*~ filter=git-crypt diff=git-crypt
