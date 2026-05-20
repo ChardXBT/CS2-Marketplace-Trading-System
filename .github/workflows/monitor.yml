@@ -1,0 +1,158 @@
+name: CSFloat Hourly Monitor
+on:
+  workflow_dispatch:
+    inputs:
+      listing_tier:
+        description: "Which listing tier to process"
+        required: false
+        default: "cycle"
+        type: choice
+        options:
+          - cycle
+          - hot
+          - mid
+          - cold
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Cancel if another run is already in progress
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'monitor.yml',
+              status: 'in_progress',
+            });
+            const otherRuns = data.workflow_runs.filter(r => r.id !== context.runId);
+            if (otherRuns.length > 0) {
+              core.notice(`Another run is already in progress (run ${otherRuns[0].id}). Cancelling this run.`);
+              await github.rest.actions.cancelWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.runId,
+              });
+              await new Promise(resolve => setTimeout(resolve, 60000));
+            }
+
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install git-crypt
+        run: sudo apt-get install -y git-crypt
+
+      - name: Unlock git-crypt
+        run: |
+          echo "${{ secrets.GIT_CRYPT_KEY }}" | base64 -d > git-crypt-key
+          git-crypt unlock git-crypt-key
+          rm git-crypt-key
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+
+      - name: Run the monitor script
+        env:
+          CSFLOAT_API_KEY: ${{ secrets.CSFLOAT_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LISTING_TIER: ${{ github.event.inputs.listing_tier || 'cycle' }}
+        run: |
+          set -o pipefail
+          PYTHONIOENCODING=utf-8 python main.py 2>&1 | tee /tmp/bot_output.txt
+
+      - name: Send logs to Discord
+        if: always()
+        env:
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+        run: |
+          python << 'EOF'
+          import requests
+          import time
+          import os
+
+          webhook = os.environ["DISCORD_LOG_WEBHOOK_URL"]
+
+          with open("/tmp/bot_output.txt", "r", encoding="utf-8", errors="replace") as f:
+              log = f.read()
+
+          if not log.strip():
+              log = "(no output)"
+
+          chunks = [log[i:i+1800] for i in range(0, len(log), 1800)]
+          total = len(chunks)
+
+          for i, chunk in enumerate(chunks):
+              msg = f"**📋 Bot Log [{i+1}/{total}]**\n```\n{chunk}\n```"
+              
+              sent = False
+              for attempt in range(7):
+                  try:
+                      r = requests.post(webhook, json={"content": msg}, timeout=15)
+                      
+                      if r.status_code in [200, 204]:
+                          sent = True
+                          break
+                      elif r.status_code == 429:
+                          data = r.json()
+                          retry_after = data.get("retry_after", 10)
+                          is_global = data.get("global", False)
+                          wait = retry_after + 3
+                          if is_global:
+                              wait = max(wait, 30)
+                          print(f"Rate limited (global={is_global}), waiting {wait}s (attempt {attempt+1}/7)...")
+                          time.sleep(wait)
+                      else:
+                          print(f"Failed with {r.status_code}, waiting 10s before retry...")
+                          time.sleep(10)
+                  except Exception as e:
+                      print(f"Request error: {e}, waiting 15s...")
+                      time.sleep(15)
+
+              if not sent:
+                  print(f"Chunk {i+1} failed after all retries — skipping")
+
+              if (i + 1) % 5 == 0:
+                  print("Burst pause — waiting 30s...")
+                  time.sleep(30)
+              else:
+                  time.sleep(5)
+
+          EOF
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          mkdir -p data
+          touch data/state.json
+          
+          git add data/state.json data/outbid_stats.json config/listings.py config/listings_hot.py config/listings_mid.py
+          
+          if git diff --staged --quiet; then
+            echo "No changes to save."
+          else
+            git stash push -m "workflow changes"
+            git pull --rebase origin master
+            git stash pop
+            git add data/state.json data/outbid_stats.json config/listings.py config/listings_hot.py config/listings_mid.py
+            git commit -m "Auto-update: market prices and bid sync [skip ci]"
+            git push origin master
+          fi
