@@ -74,8 +74,8 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           LISTING_TIER: ${{ github.event.inputs.listing_tier || 'cycle' }}
         run: |
-          set -o pipefail
-          PYTHONIOENCODING=utf-8 python main.py 2>&1 | tee /tmp/bot_output.txt
+          echo "Running monitor. Detailed bot output is saved privately and sent to Discord."
+          PYTHONIOENCODING=utf-8 python main.py > /tmp/bot_output.txt 2>&1
 
       - name: Send logs to Discord
         if: always()
