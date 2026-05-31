@@ -222,10 +222,10 @@ flowchart TD
 
 | Component | Role | Runtime |
 |---|---|---|
-| Skinport | Automated watch-list scanning with marketplace price normalization and alerting | Windows Task Scheduler |
-| CS.Money | Supplemental marketplace checks and Discord alerting for watched opportunities | Windows Task Scheduler |
-| Steam Community Market | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries | GitHub Actions |
-| BUFF | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries |
+| Skinport | Automated watch-list scanning with marketplace price normalization and alerting (auto rebases price) | Windows Task Scheduler |
+| CS.Money | Supplemental marketplace checks and Discord alerting for watched opportunities (auto rebases price) | Windows Task Scheduler |
+| Steam Community Market | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries (auto rebases price) | GitHub Actions |
+| BUFF | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries (auto rebases price) | Hidden |
 
 These components extend the system beyond the core CSFloat buy-order monitor while remaining separate from its bidding loop and state machine.
 
