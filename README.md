@@ -151,6 +151,11 @@ The workflow supports manual tier selection through `workflow_dispatch`:
 - `cold`
 
 The external scheduler can continue triggering the same workflow endpoint; normal unattended execution uses `cycle`.
+The external trigger currently runs every 15 minutes. Hot bidding runs every
+trigger, while internal cycle counts keep mid at 90 minutes and cold at 3
+hours. Every invocation performs a lightweight live-quantity reconciliation
+across all tiers before normal tier processing. Runs lasting at least 10
+minutes arm a one-shot skip for the next external trigger.
 
 ## Additional Components
 ### Auto-Lister
