@@ -141,6 +141,24 @@ python test_file.py
 
 The sandbox uses real marketplace order behavior for entries in `sandbox/test_listings.py`, while intentionally skipping live tier promotion/demotion, bid-war state changes, Discord notifications, and global cleanup tasks.
 
+### Saved losing-bid report
+
+```bash
+python show_losing_bids.py
+```
+
+Optionally filter the report to one tier:
+
+```bash
+python show_losing_bids.py --tier hot
+python show_losing_bids.py --tier mid
+python show_losing_bids.py --tier cold
+```
+
+This is a read-only report built from the latest persisted hot, mid, and cold
+run data in `data/state.json`. It makes no API calls, does not run the monitor,
+does not modify state or config, and does not create or save report files.
+
 ### GitHub Actions
 
 The workflow supports manual tier selection through `workflow_dispatch`:
