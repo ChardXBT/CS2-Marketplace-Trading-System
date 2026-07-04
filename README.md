@@ -10,7 +10,7 @@ The project is built around resilient scheduled execution rather than a continuo
 flowchart LR
     A["External Scheduler"] --> B["GitHub Actions Workflow"]
     B --> C["Buy-Order Monitor"]
-    C --> D["CSFloat API"]
+    C --> D["Marketplace API"]
     C --> E["Encrypted Config"]
     C --> F["Persisted State"]
     C --> G["Discord Alerts"]
@@ -250,7 +250,7 @@ flowchart TD
 | Steam Community Market | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries (auto rebases price) | GitHub Actions |
 | BUFF | Scheduled marketplace search monitoring with currency normalization, sticker-condition filtering, and ranked deal summaries (auto rebases price) | Hidden |
 
-These components extend the system beyond the core CSFloat buy-order monitor while remaining separate from its bidding loop and state machine.
+These components extend the system beyond the core marketplace buy-order monitor while remaining separate from its bidding loop and state machine.
 
 ## Notes
 
