@@ -57,16 +57,17 @@ flowchart TD
     B --> C["Fetch live orders"]
     C --> D["Startup reconciliation"]
     D --> E["Select due priority tiers"]
-    E --> F["Evaluate each target"]
-    F --> G{"Observed order state"}
+    E --> F["Observe every due target"]
+    F --> G{"Validated current-run snapshot"}
     G -->|Missing| H["Validate recreate eligibility"]
     G -->|Competitive| I["Keep or reduce excess exposure"]
     G -->|Outbid| J["Plan bounded adjustment"]
     G -->|Ambiguous| K["Preserve state and defer"]
-    H --> L["Guarded write"]
-    I --> L
-    J --> L
+    H --> R["Rank one candidate per target"]
+    I --> R
+    J --> R
     K --> M["No unsafe action"]
+    R --> L["Reserve attempt budget and write"]
     L --> N["Verify response and reconcile"]
     M --> O["Persist run summary"]
     N --> O
@@ -100,6 +101,52 @@ exactly one tier, preventing duplicate orders and silent omissions.
 | `hot` | Active and high-priority targets only |
 | `mid` | Medium-frequency targets only |
 | `cold` | Low-frequency targets only |
+
+### Observation-first write scheduling
+
+Each due listing is observed before normal order writes begin. The existing bid
+strategy produces at most one candidate from that current-run snapshot, then a
+global queue ranks safety corrections, temporary-main restoration, actionable
+outbids, missing-order repair, quantity repair, and exposure-reducing decreases.
+Decrease priority uses `(current price - target price) * quantity`, matching the
+capital reserved by a buy order.
+
+The default run allows six attempted writes and holds two slots for safety or
+restoration. Failed requests count as attempts, one listing cannot write twice
+in a run, and a write-side HTTP 429 stops mutations immediately and persists a
+cooldown. Deferred metadata and the observation cursor live under
+`bid_scheduler` in `data/state.json`; persisted entries affect fairness only and
+are never executed without a fresh valid observation.
+
+Tune these controls in `src/market_monitor/strategy_settings.py`:
+
+- `MAX_WRITE_OPERATIONS_PER_RUN`
+- `RESERVED_RESTORATION_SAFETY_WRITES`
+- `MAX_OBSERVATIONS_PER_RUN` (`0` observes every due listing)
+- `MAX_QUEUE_DEFERRAL_RUNS`
+- `MAX_MUTATION_SNAPSHOT_AGE_SECONDS`
+
+### Temporary extra bids
+
+Temporary extras are declared in encrypted `config/temporary_bids.py`. Add
+`"temporary_suspend": True` to the paired main listing while leaving its exact
+recreation policy, price, quantity, and identity fields intact. A temporary
+entry must carry `"temporary_extra": True`; use `main_tracking_key` when the
+pair should not be inferred from the initial one-to-one config order.
+
+The monitor adopts a blank temporary order ID only when a complete paginated
+active-order sync finds one unique, strongly constrained semantic match. It
+then durably records the pair, suspends the main through the shared write
+budget, and leaves the main tag in place. Once a later complete sync proves the
+temporary order is gone, restoration recreates the saved main subject to the
+current floor, cap, tick, quantity, hybrid-property, and active-order-count
+guards. Ambiguity, incomplete reads, count mismatches, missing tags, or policy
+failures preserve state and block destructive action.
+
+Temporary orders never participate in repricing, recreation, quantity top-up,
+tiering, cleanup, or scraper exports. The canonical main listing remains in the
+normal tier file, so downstream `active_bid_prices.json` consumers retain its
+last verified/configured threshold throughout suspension.
 
 ### Market-aware protection
 
