@@ -100,25 +100,7 @@ jobs:
 
       - name: Checkpoint runtime changes
         if: ${{ always() && steps.admission.outputs.should_run == 'true' }}
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          mkdir -p data
-          touch data/state.json
-
-          git add data/state.json data/outbid_stats.json data/active_bid_prices.json data/active_bid_prices.csv data/temp_dead_listings.json data/branch_split_candidates.json config/listings.py config/listings_hot.py config/listings_mid.py config/listings_sos.py config/temporary_bids.py config/managed_overlays.py
-
-          if git diff --staged --quiet; then
-            echo "No changes to save."
-          else
-            git stash push -m "workflow changes"
-            git pull --rebase origin master
-            git stash pop
-            git add data/state.json data/outbid_stats.json data/active_bid_prices.json data/active_bid_prices.csv data/temp_dead_listings.json data/branch_split_candidates.json config/listings.py config/listings_hot.py config/listings_mid.py config/listings_sos.py config/temporary_bids.py config/managed_overlays.py
-            git commit -m "Auto-update: market prices and bid sync [skip ci]"
-            git push origin master
-          fi
+        run: bash .github/scripts/checkpoint_runtime.sh
 
       - name: Send logs to Discord
         if: ${{ always() && steps.admission.outputs.should_run == 'true' }}

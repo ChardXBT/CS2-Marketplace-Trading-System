@@ -127,6 +127,12 @@ snapshot reconciles that outcome before any retry. The 80-minute watchdog
 checkpoints state and pre-arms a one-run skip before the workflow's 85-minute
 hard timeout.
 
+GitHub Actions runs are serialized and queued dispatches check out the latest
+`master` rather than their captured dispatch SHA. Runtime checkpoints retry
+disjoint concurrent pushes, but never merge overlapping encrypted files. A
+rare overlap is preserved on a `runtime-recovery/<run>` branch and reported in
+the job summary and Discord log so the next scheduled run can reconcile safely.
+
 Tune these controls in `src/market_monitor/strategy_settings.py`:
 
 - `MAX_WRITE_OPERATIONS_PER_RUN` (`0` disables the artificial count ceiling)
