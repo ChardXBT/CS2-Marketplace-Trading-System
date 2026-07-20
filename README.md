@@ -111,17 +111,26 @@ outbids, missing-order repair, quantity repair, and exposure-reducing decreases.
 Decrease priority uses `(current price - target price) * quantity`, matching the
 capital reserved by a buy order.
 
-The default run allows six attempted writes and holds two slots for safety or
-restoration. Failed requests count as attempts, one listing cannot write twice
-in a run, and a write-side HTTP 429 stops mutations immediately and persists a
-cooldown. Deferred metadata and the observation cursor live under
-`bid_scheduler` in `data/state.json`; persisted entries affect fairness only and
-are never executed without a fresh valid observation.
+The default run has no artificial write-count ceiling. Candidates execute in
+priority order until work is exhausted, their market snapshots become stale, or
+a write-side HTTP 429 trips the run-local circuit breaker. The circuit breaker
+checkpoints state and defers all remaining mutations to the next scheduled run;
+read/search exhaustion retains the longer persisted cooldown. Failed requests
+are counted, and one listing cannot write twice in a run. Deferred metadata and
+the observation cursor live under `bid_scheduler` in `data/state.json`;
+persisted entries affect fairness only and are never executed without a fresh
+valid observation.
+
+An ambiguous PATCH/POST/DELETE transport timeout also checkpoints and stops the
+run because the remote outcome cannot be known safely. The next complete order
+snapshot reconciles that outcome before any retry. The 80-minute watchdog
+checkpoints state and pre-arms a one-run skip before the workflow's 85-minute
+hard timeout.
 
 Tune these controls in `src/market_monitor/strategy_settings.py`:
 
-- `MAX_WRITE_OPERATIONS_PER_RUN`
-- `RESERVED_RESTORATION_SAFETY_WRITES`
+- `MAX_WRITE_OPERATIONS_PER_RUN` (`0` disables the artificial count ceiling)
+- `RESERVED_RESTORATION_SAFETY_WRITES` (used only with a finite ceiling)
 - `MAX_OBSERVATIONS_PER_RUN` (`0` observes every due listing)
 - `MAX_QUEUE_DEFERRAL_RUNS`
 - `MAX_MUTATION_SNAPSHOT_AGE_SECONDS`
