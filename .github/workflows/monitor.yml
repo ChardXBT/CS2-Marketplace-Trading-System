@@ -57,6 +57,10 @@ jobs:
         if: steps.admission.outputs.should_run == 'true'
         uses: actions/checkout@v4
         with:
+          # workflow_dispatch captures a SHA when cron submits the run. A
+          # queued run may start after the previous serialized run has pushed
+          # newer encrypted state, so always begin from the live branch head.
+          ref: master
           fetch-depth: 0
       
       - name: Set up Python
