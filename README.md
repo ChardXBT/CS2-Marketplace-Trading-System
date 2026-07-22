@@ -127,6 +127,13 @@ snapshot reconciles that outcome before any retry. The 80-minute watchdog
 checkpoints state and pre-arms a one-run skip before the workflow's 85-minute
 hard timeout.
 
+CSFloat account suspensions are detected from API error code `138` on the
+monitor's existing requests; no separate per-run suspension probe is sent. The
+first confirmed response atomically records a 24-hour cooldown in
+`data/state.json` and terminates the invocation before any further market
+activity. Scheduled runs fail closed against that persisted deadline, and the
+workflow checkpoints it so the hold survives fresh runners and restarts.
+
 GitHub Actions runs are serialized and queued dispatches check out the latest
 `master` rather than their captured dispatch SHA. Runtime checkpoints retry
 disjoint concurrent pushes, but never merge overlapping encrypted files. A
