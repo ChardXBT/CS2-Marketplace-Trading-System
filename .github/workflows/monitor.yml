@@ -1,0 +1,206 @@
+name: CSFloat Hourly Monitor
+on:
+  workflow_dispatch:
+    inputs:
+      listing_tier:
+        description: "Which listing tier to process"
+        required: false
+        default: "cycle"
+        type: choice
+        options:
+          - cycle
+          - hot
+          - mid
+          - cold
+
+concurrency:
+  group: csfloat-hourly-monitor-production
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GIT_TERMINAL_PROMPT: "0"
+  RUNTIME_PRIVATE_LOG: /tmp/bot_output.txt
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check dispatch freshness
+        id: admission
+        timeout-minutes: 3
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const maxAgeMinutes = 20;
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+            });
+            const createdAt = Date.parse(run.created_at);
+            const ageMinutes = (Date.now() - createdAt) / 60000;
+            const shouldRun = Number.isFinite(ageMinutes)
+              && ageMinutes >= -5
+              && ageMinutes <= maxAgeMinutes;
+
+            core.setOutput('should_run', shouldRun ? 'true' : 'false');
+            if (shouldRun) {
+              core.info(`Dispatch admitted at ${ageMinutes.toFixed(1)} minutes old.`);
+            } else {
+              core.notice(
+                `Skipping stale dispatch ${context.runId}: `
+                + `${ageMinutes.toFixed(1)} minutes old (limit ${maxAgeMinutes}).`
+              );
+            }
+
+      - name: Initialize private run log
+        id: initialize_log
+        if: steps.admission.outputs.should_run == 'true'
+        run: |
+          : > "$RUNTIME_PRIVATE_LOG"
+          printf '[WORKFLOW] admission=%s\n' '${{ steps.admission.outcome }}' >> "$RUNTIME_PRIVATE_LOG"
+
+      - name: Checkout repository code
+        id: checkout
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 5
+        uses: actions/checkout@v4
+        with:
+          # A queued dispatch can start after an earlier serialized run has
+          # checkpointed newer encrypted state. Always begin at live master.
+          ref: master
+          fetch-depth: 0
+
+      - name: Set up Python
+        id: setup_python
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 5
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install git-crypt
+        id: install_git_crypt
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 5
+        run: sudo apt-get install -y git-crypt
+
+      - name: Unlock git-crypt
+        id: unlock
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 3
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          umask 077
+          trap 'rm -f git-crypt-key' EXIT
+          printf '%s' "$GIT_CRYPT_KEY" | base64 -d > git-crypt-key
+          git-crypt unlock git-crypt-key
+
+      - name: Install dependencies
+        id: dependencies
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 7
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Validate decrypted runtime configuration
+        id: validate
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 5
+        run: |
+          if ! python .github/scripts/validate_runtime_config.py >> "$RUNTIME_PRIVATE_LOG" 2>&1; then
+            echo "::error title=Runtime configuration invalid::Detailed diagnostics were kept out of Actions logs and sent to the private run-log webhook."
+            exit 1
+          fi
+
+      - name: Run the monitor script
+        id: monitor
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 85
+        env:
+          CSFLOAT_API_KEY: ${{ secrets.CSFLOAT_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LISTING_TIER: ${{ github.event.inputs.listing_tier || 'cycle' }}
+        run: |
+          echo "Running monitor. Detailed bot output is saved privately and sent to Discord."
+          PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
+
+      - name: Checkpoint runtime changes
+        id: checkpoint
+        if: ${{ steps.monitor.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash .github/scripts/checkpoint_runtime.sh
+
+      - name: Send logs to Discord
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
+        # Observability must not rewrite a successful monitor/checkpoint result.
+        # The helper still exits nonzero and emits a warning when delivery fails.
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          CSFLOAT_API_KEY: ${{ secrets.CSFLOAT_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ADMISSION_OUTCOME: ${{ steps.admission.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          UNLOCK_OUTCOME: ${{ steps.unlock.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+          MONITOR_OUTCOME: ${{ steps.monitor.outcome }}
+          CHECKPOINT_OUTCOME: ${{ steps.checkpoint.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: python .github/scripts/send_private_log.py
+
+      - name: Report admission or checkout failure to Discord
+        if: ${{ always() && (steps.admission.outcome == 'failure' || steps.admission.outcome == 'cancelled' || (steps.admission.outputs.should_run == 'true' && steps.checkout.outcome != 'success')) }}
+        timeout-minutes: 3
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          webhook = (
+              os.environ.get("DISCORD_LOG_WEBHOOK_URL", "").strip()
+              or os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+          )
+          if not webhook:
+              raise SystemExit("Generic failure webhook is unavailable")
+          payload = json.dumps({
+              "content": (
+                  "🛑 Monitor workflow failed before the private reporter was available. "
+                  f"Run: {os.environ.get('RUN_URL', 'unavailable')}"
+              ),
+              "allowed_mentions": {"parse": []},
+          }).encode("utf-8")
+          # Keep the bootstrap path compatible with the existing webhook too:
+          # Discord rejected Python's default Python-urllib user agent even
+          # though the same endpoint accepts the requests client used by the
+          # detailed reporter.
+          request = Request(
+              webhook,
+              data=payload,
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "python-requests/2.32.5",
+              },
+              method="POST",
+          )
+          try:
+              with urlopen(request, timeout=20) as response:
+                  if response.status not in (200, 204):
+                      raise RuntimeError("unexpected response")
+          except Exception:
+              raise SystemExit("Generic Discord failure report could not be delivered") from None
+          PY
