@@ -326,10 +326,15 @@ supporting utilities.
 │   └── manual_bids.py               # Explicit manual entries
 ├── data/
 │   ├── state.json                   # Durable monitor state
-│   └── outbid_stats.json            # Competitive-pressure history
+│   ├── outbid_stats.json            # Competitive-pressure history
+│   ├── backups/                     # Historical listing/config and run backups
+│   └── reference/                   # Reference datasets and guides
 ├── sandbox/
-│   ├── runner.py
-│   └── test_listings.py
+│   ├── runner.py                    # Isolated live sandbox runner
+│   ├── test_file.py                 # Sandbox compatibility entrypoint
+│   └── test_listings.py             # Sandbox-only listing targets
+├── tests/                           # Unit and regression tests
+├── tools/                           # Manual operational/reporting utilities
 ├── src/market_monitor/
 │   ├── monitor.py                   # Main orchestration
 │   ├── monitor_market.py            # Market reads and comparison
@@ -338,11 +343,9 @@ supporting utilities.
 │   ├── monitor_tiers.py             # Tier movement and validation
 │   ├── listing_loader.py            # Configuration loading and normalization
 │   └── strategy_settings.py         # Central runtime controls
-├── export_bid_prices.py
-├── show_losing_bids.py
-├── sync_quantities.py
-├── main.py
-└── test_file.py
+├── main.py                          # Production monitor entrypoint
+├── requirements.txt
+└── README.md
 ```
 
 ## Running the core monitor
@@ -357,20 +360,26 @@ python main.py
 Run the isolated sandbox entrypoint:
 
 ```bash
-python test_file.py
+python sandbox/test_file.py
 ```
 
 Generate a read-only losing-bid report from persisted state:
 
 ```bash
-python show_losing_bids.py
-python show_losing_bids.py --tier hot
-python show_losing_bids.py --tier mid
-python show_losing_bids.py --tier cold
+python tools/show_losing_bids.py
+python tools/show_losing_bids.py --tier hot
+python tools/show_losing_bids.py --tier mid
+python tools/show_losing_bids.py --tier cold
 ```
 
 The report performs no marketplace writes and does not modify state or
 configuration.
+
+Run the automated regression suite:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
 
 ## Security and public scope
 
