@@ -378,7 +378,7 @@ configuration.
 Run the automated regression suite:
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py"
+python -X utf8 -m unittest discover -s tests -p "test_*.py"
 ```
 
 ## Security and public scope
