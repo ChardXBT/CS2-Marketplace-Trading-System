@@ -75,7 +75,10 @@ jobs:
           # A queued dispatch can start after an earlier serialized run has
           # checkpointed newer encrypted state. Always begin at live master.
           ref: master
-          fetch-depth: 0
+          # The checkpoint script only needs the live tip and its new child
+          # commit. Fetching the repository's full history and every ref can
+          # exceed this step's timeout as the runtime history grows.
+          fetch-depth: 1
 
       - name: Set up Python
         id: setup_python
