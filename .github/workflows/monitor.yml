@@ -135,6 +135,11 @@ jobs:
           echo "Running monitor. Detailed bot output is saved privately and sent to Discord."
           PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
 
+      - name: Report bounded run evidence
+        if: ${{ steps.monitor.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python .github/scripts/report_run_evidence.py
+
       - name: Checkpoint runtime changes
         id: checkpoint
         if: ${{ steps.monitor.outcome == 'success' }}
