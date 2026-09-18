@@ -1,53 +1,127 @@
 # CS2 Marketplace Trading System
 
-A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 12+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
+A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 10+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph "Marketplace Discovery"
-        A["Marketplace Scanners"]
-        B["Arbitrage Analysis"]
+        A["Skinport + CS.Money Finder"]
+        B["CS Market Arbitrage Scanner"]
+        C["BUFF + Steam Market Monitors"]
     end
     subgraph "Order Management"
-        C["CSFloat Buy-Order Monitor"]
-        D["CSFloat Browser Watcher"]
-        E["CSMarket Auto Buyer"]
+        D["CSFloat Buy-Order Monitor"]
+        E["CSFloat Browser Watcher"]
+        F["CSMarket Auto Buyer"]
+        G["CS.Money Auto Buyer"]
     end
     subgraph "Inventory Management"
-        F["CS.Money Auto Lister"]
-        G["Skins.com Auto Lister"]
-    end
-    subgraph "Support Services"
-        H["Case Opener"]
-        I["Steam ASF Keeper"]
+        H["CS.Money Auto Lister"]
+        I["Skins.com Auto Lister"]
     end
 
-    C --> J["Marketplace Orders"]
-    D --> J
+    D --> J["Marketplace Orders"]
     E --> J
-    F --> K["Owned Inventory"]
-    G --> K
+    F --> J
+    G --> J
+    H --> K["Owned Inventory"]
+    I --> K
     A --> L["Ranked Opportunities"]
     B --> L
+    C --> L
 ```
 
 Each service owns a narrow responsibility and produces durable run evidence. Failures remain isolated — a watcher outage cannot interrupt order maintenance, and a listing failure cannot corrupt buy-order state. A centralized supervisor orchestrates the full lifecycle: scheduling, process ownership, recovery after crashes, network-aware pauses, and coordinated shutdowns.
+
+```mermaid
+flowchart TD
+    A["Scheduled trigger"] --> B["Load configuration and durable state"]
+    B --> C["Fetch live marketplace data"]
+    C --> D["Reconcile against tracked targets"]
+    D --> E["Tier-based priority selection"]
+    E --> F["Observe every due listing"]
+    F --> G{"Safety validation"}
+    G -->|"Outbid or expired"| H["Plan repricing or recreation"]
+    G -->|"Competitive"| I["Keep or reduce exposure"]
+    G -->|"Ambiguous"| J["Preserve state and defer"]
+    G -->|"Account suspended"| K["Atomic cooldown; terminate run"]
+    H --> L["Rank candidates by priority"]
+    I --> L
+    L --> M["Execute bounded writes"]
+    M --> N["Verify response"]
+    N --> O["Persist state and run evidence"]
+    J --> O
+    K --> O
+```
 
 ## Buy-order management
 
 ### CSFloat Buy-Order Monitor
 
-The core of the system. A Python platform that maintains marketplace buy orders on CSFloat — polling active orders, detecting outbids, and automatically repricing or recreating bids to stay competitive.
+The core of the system. A Python platform built on mixin composition — `MarketMixin`, `ProcessingMixin`, `RuntimeMixin`, and `TierMixin` combine into a `MultiMonitor` that runs a continuous poll loop against CSFloat's marketplace API.
 
-- Tiered scheduling (hot/mid/cold) to concentrate expensive API checks on active targets
-- Observation-first write scheduling with a global priority queue ranking safety corrections, outbids, and exposure reductions
-- Circuit breaker on HTTP 429 — checkpoints state and defers mutations to the next run
-- Account suspension detection with atomic 24-hour cooldown
-- Temporary extra bids with paired main-suspension logic and backup recovery
-- Market-aware protection — compares buy-now listings against the bid plan and tightens exposure when the market shifts
-- Configurable via `strategy_settings.py` (write caps, observation caps, queue deferral, snapshot age)
+**Workflow:**
+
+1. Load configuration across three tiers (hot/mid/cold) and durable runtime state
+2. Fetch authoritative live orders from CSFloat's API
+3. Reconcile configured targets against live orders, preserving ambiguous or in-flight state
+4. Select due priority tiers — hot targets checked frequently, cold targets rotated less often
+5. Observe every due listing before any writes begin
+6. Plan the smallest valid update per target (reprice, recreate, retire, or hold)
+7. Execute writes in priority order until work is exhausted or a rate limit trips the circuit breaker
+8. Persist atomic state snapshots, tier movements, and structured run artifacts
+
+**Key algorithms:**
+
+- **Tiered scheduling** — targets promote or demote between hot/mid/cold based on recent activity, with mutation budgets preventing tier thrashing
+- **Observation-first write scheduling** — every listing is observed before mutations begin; a global priority queue ranks safety corrections, outbids, missing-order repairs, and exposure reductions
+- **Bid war escalation** — when a price approaches the configured maximum, incremental bid increases follow a diminishing-return curve
+- **Fair observation cursor** — ensures each item gets equal observation time, preventing bias toward fast-updating listings
+- **Branch-split detection** — detects when CSFloat splits variants (e.g., different stickers) and adjusts tracking accordingly
+
+**Safety:**
+
+- Circuit breaker on HTTP 429 — checkpoints state and defers all remaining mutations to the next run
+- Account suspension detection (error code 138) — atomic 24-hour cooldown, immediate termination, persisted deadline
+- 80-minute watchdog checkpoints state and pre-arms a one-run skip before the 85-minute hard timeout
+- Atomic I/O — state written to temp files then renamed; previous snapshots retained for recovery
+- Configurable via `strategy_settings.py` — write caps, observation caps, queue deferral, snapshot age
+
+### Auto Buyers
+
+The system includes two auto-buyer implementations covering CSFloat and CS.MONEY, sharing the same core loop: scan → match → validate → purchase → verify.
+
+**CSMarket Auto Buyer (CSFloat API):**
+
+- API-based scanner polling CSFloat's marketplace endpoints continuously
+- Three modes: Fastest (19s solo), Dual (45s with Browser Watcher), Slow (40s solo)
+- Paginates beyond the first 50-listing page, reading until the remembered-listing frontier
+- HTTP 429 recovery ladder (60s → 300s → 600s → exit) with supervisor-applied retry guards
+- Correlated shutdown contract — fresh result artifact, zero exit, exact process exit
+- Shared 24-hour account suspension hold with the Browser Watcher
+- Unclean-recovery ready marker after state validation and live offer reconciliation
+
+**CS.Money Auto Buyer (Browser):**
+
+- Playwright-driven browser scanner with a dedicated Chrome profile and dynamic CDP allocation
+- 409-target / 8,175-branch policy with exact sticker identity, item identity, and pinned canonical weapon/paint data
+- Sticker matching by ID set with penalty scoring for partial matches
+- Low-float classification levels (e.g., "low", "very low") with configurable thresholds per weapon type
+- Evidence digest — hash of target configuration for quick comparison and audit trail
+- Dry-run default; live buying requires triple-armed configuration (`dry_run=false`, `live_runtime_enabled=true`, `live_purchasing_enabled=true`)
+- Purchase lock prevents concurrent purchases; delivery cancellation monitor watches for marketplace removing bought items
+- Child-owned recovery ladder (60s → 5min → 10min → 10min bounded)
+- Target authorization approval flow; correlated shutdown with browser cleanup
+
+**Shared patterns:**
+
+- State persistence between runs via structured JSON
+- Cooldown/rate limiting with progressive backoff
+- Graceful shutdown with correlated result artifacts
+- Unclean-recovery detection and reconciliation
+- Network pause/resume with redundant markers
 
 ### CSFloat Browser Watcher
 
@@ -61,49 +135,39 @@ A Node.js/Playwright browser automation layer that controls a signed-in Chrome s
 - Network pause/resume with in-flight markers
 - Discord notifications for submissions, counters, and bargains
 
-### CSMarket Auto Buyer
-
-A Python API scanner and purchase worker that continuously polls CSFloat's official listings API, matches configured targets, and executes buys.
-
-- Three modes: Fastest (19s solo), Dual (45s with Browser Watcher), Slow (40s solo)
-- Paginates beyond the first 50-listing API page
-- HTTP 429 recovery ladder with supervisor-applied retry guards
-- Correlated shutdown contract with fresh result artifacts
-- Shared 24-hour account suspension hold with the Browser Watcher
-- Unclean-recovery ready marker after state validation
-
-### CS.Money Auto Buyer
-
-A standalone browser scanner and purchase worker for CS.MONEY Market Mode using Playwright with a dedicated Chrome profile.
-
-- 409-target / 8,175-branch policy with exact sticker identity and pinned canonical weapon/paint data
-- Dry-run default; live buying requires triple-armed configuration
-- Dynamic localhost CDP allocation with stable ordered-ID continuity
-- Child-owned recovery ladder with bounded retries
-- Runtime status and recovery-exhausted contracts
-- Correlated shutdown with browser cleanup
-
 ## Inventory management
 
-### CS.Money Auto Lister
+### Auto Listers
 
-An automated browser lister that reconciles owned CS.MONEY inventory, creates or renews listings, updates prices, and confirms sales.
+Two auto-lister implementations mirror CSFloat inventory across CS.MONEY and Skins.com, sharing the same reconciliation loop: fetch source inventory → match against marketplace listings → create, update, or delist as needed.
 
-- Multi-account support with separate Chrome profiles
-- Browser tab cleanup — closes target pages after exit without killing shared Chrome
+**CS.Money Auto Lister:**
+
+- Multi-account support with separate Chrome profiles and isolated state per account
+- Item identity matching via asset IDs and market hash names between CSFloat and CS.Money
+- Reconciliation compares current CSFloat state vs CS.Money state, delists items no longer on CSFloat
+- Mass-delist guard prevents accidentally removing too many items at once
 - Per-item outcome records: already_listed, listed, price_updated, extension_required
 - Rate-limit timeout handling with bounded retries
 - Verification grace period before confirming sales
+- Browser tab cleanup — closes target pages after exit without killing shared Chrome
 
-### Skins.com Auto Lister
+**Skins.com Auto Lister:**
 
-An automated browser lister for Skins.com that reconciles inventory, creates/delists/updates listings, and manages price synchronization.
-
-- Multi-account support
-- Shares infrastructure with CS.MONEY automations
+- Multi-account support sharing infrastructure with CS.MONEY automations
+- Two modes: calibration (first-run mapping) and normal (continuous monitoring)
+- Identity matching between CSFloat and Skins.com item representations
+- Decimal precision arithmetic for price calculations — avoids float rounding errors
+- Mass-delist protection: minimum threshold, ratio limit, absolute cap
 - Tab cleanup targeting skins.com pages while preserving unrelated tabs
-- Calibration listing verification required before production enablement
-- Per-item outcomes: already_listed, listed, delisted, price_updated
+- Per-item outcomes: already_listed, listed, delisted, price_updated, submitted_unverified
+
+**Shared patterns:**
+
+- Atomic file writes for runtime state with git sync for change tracking
+- Mass-delist guards across both implementations
+- Calibration verification required before production enablement
+- Exclusive resource locking to prevent concurrent marketplace access
 
 ## Marketplace discovery
 
@@ -115,7 +179,6 @@ A daily two-stage browser workflow that scans Skinport and CS.Money for sticker 
 - Component recovery — one marketplace's sign-in failure queues the other
 - Repair actions for sign-in failures per marketplace
 - Completion proof via timestamped JSON with per-check status records
-- Shared Chrome profiles with exclusive resource locking
 
 ### CS Market Arbitrage Scanner
 
@@ -124,35 +187,11 @@ A read-only scanner that compares listings from Skins.com, CS.MONEY, and SkinSwa
 - Three source marketplaces with dedicated Chrome profiles per source
 - Immutable receipt-based run artifacts with digest verification
 - Retry command that re-runs only failed sources from a prior receipt
-- Discord notifications and Git publication of report history
 - Read-only — no purchase, listing, or bid-write behavior
 
-### Additional scanners
+### Additional monitors
 
 The system also includes monitors for BUFF and the Steam Community Market, evaluating currency-normalized opportunities and publishing compact summaries. These services are isolated from order maintenance — an alerting outage does not alter active bids.
-
-## Support services
-
-### Case Opener
-
-Automates daily CS2 case openings across five signed-in Chrome profiles, reading Discord social codes, opening cases via Windows UI Automation, and tracking streaks.
-
-- Opens cases for 5 Chrome profiles using the Windows accessibility tree
-- Discord channel integration for social-code discovery with 48-hour deduplication
-- 7th streak day bonus logic with profile-specific handling
-- Cloudflare verification handling with three recovery rounds
-- Account-specific Discord webhook notifications
-- 24-hour cadence with opened/skipped/verification-blocked tracking
-
-### Steam ASF Keeper
-
-Manages an ArchiSteamFarm process to report CS2 as played across multiple Steam accounts, providing before/after proof verification — a prerequisite for the Case Opener's CS2 playtime requirement.
-
-- Strict PID/creation-time/path/CLI isolation
-- Per-account proof: before/after official Steam-recorded CS2 minutes comparison
-- Hard invariants: ASF IPC on localhost only, banned port list, no browser automation
-- DPAPI-protected secrets with current-user ACL on runtime directory
-- 192 automated tests with verified live acceptance
 
 ## Reliability
 
@@ -206,7 +245,7 @@ A process launch or a single log message is not treated as proof of successful w
 ├── tests/                       # Unit and regression tests
 ├── tools/                       # Manual operational/reporting utilities
 ├── src/market_monitor/
-│   ├── monitor.py               # Main orchestration
+│   ├── monitor.py               # Main orchestration (MultiMonitor)
 │   ├── monitor_market.py        # Market reads and comparison
 │   ├── monitor_processing.py    # Per-target decisions
 │   ├── monitor_runtime.py       # Runtime and watchdog boundaries
