@@ -1,393 +1,234 @@
 # CS2 Marketplace Trading System
 
-CS2 Marketplace Trading System is a modular automation platform for maintaining
-marketplace buy orders, monitoring configured opportunities, publishing updated
-target definitions, and managing inventory after acquisition.
+A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 12+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
 
-This repository contains the core buy-order monitor. The broader system also
-includes focused companion services for auto-listing, marketplace discovery,
-and target-file synchronization. Each service owns a narrow responsibility and
-produces durable run evidence so failures remain isolated and diagnosable.
-
-## System overview
+## Architecture
 
 ```mermaid
 flowchart LR
-    A["Target Definition Sync"] --> B["Validated Target Configuration"]
-    B --> C["Buy-Order Monitor"]
-    B --> D["Marketplace Watchers"]
-    C --> E["Marketplace Orders"]
-    D --> F["Ranked Opportunity Alerts"]
-    E --> G["Owned Inventory"]
-    G --> H["Auto-Lister"]
-    H --> I["Sale and Inventory Records"]
+    subgraph "Marketplace Discovery"
+        A["Marketplace Scanners"]
+        B["Arbitrage Analysis"]
+    end
+    subgraph "Order Management"
+        C["CSFloat Buy-Order Monitor"]
+        D["CSFloat Browser Watcher"]
+        E["CSMarket Auto Buyer"]
+    end
+    subgraph "Inventory Management"
+        F["CS.Money Auto Lister"]
+        G["Skins.com Auto Lister"]
+    end
+    subgraph "Support Services"
+        H["Case Opener"]
+        I["Steam ASF Keeper"]
+    end
 
-    C --> J["Structured State and Run Evidence"]
+    C --> J["Marketplace Orders"]
     D --> J
-    H --> J
-    A --> J
+    E --> J
+    F --> K["Owned Inventory"]
+    G --> K
+    A --> L["Ranked Opportunities"]
+    B --> L
 ```
 
-The components exchange validated configuration and structured results rather
-than sharing browser sessions or mutable runtime state. A watcher failure
-therefore cannot erase order state, and a listing failure cannot interrupt the
-buy-order monitor.
+Each service owns a narrow responsibility and produces durable run evidence. Failures remain isolated — a watcher outage cannot interrupt order maintenance, and a listing failure cannot corrupt buy-order state. A centralized supervisor orchestrates the full lifecycle: scheduling, process ownership, recovery after crashes, network-aware pauses, and coordinated shutdowns.
 
-## Component map
+## Buy-order management
 
-| Component | Responsibility | Execution model |
-| --- | --- | --- |
-| Buy-Order Monitor | Reconcile, create, reprice, and retire configured marketplace orders | Scheduled Python workflow |
-| Auto-Lister | Reconcile owned inventory, create or renew listings, and confirm sales conservatively | Scheduled browser/API workflow |
-| Skinport + CS.Money Finder | Scan configured targets, normalize results, and publish ranked alerts | Daily two-stage browser workflow |
-| Steam Market Watcher | Evaluate additional marketplace opportunities with currency and condition normalization | Scheduled workflow |
-| BUFF Watcher | Optional source adapter retained behind an explicit enable/disable control | Disabled by default |
-| Target Definition Sync | Validate and publish the target files consumed by the other components | Daily configuration workflow |
+### CSFloat Buy-Order Monitor
 
-## 1. Core buy-order monitor
+The core of the system. A Python platform that maintains marketplace buy orders on CSFloat — polling active orders, detecting outbids, and automatically repricing or recreating bids to stay competitive.
 
-The monitor maintains a bounded set of configured targets. Each run loads
-durable state, reconciles it against authoritative live orders, selects the
-appropriate priority tier, and decides whether an order should be left
-unchanged, adjusted, recreated, or retired.
+- Tiered scheduling (hot/mid/cold) to concentrate expensive API checks on active targets
+- Observation-first write scheduling with a global priority queue ranking safety corrections, outbids, and exposure reductions
+- Circuit breaker on HTTP 429 — checkpoints state and defers mutations to the next run
+- Account suspension detection with atomic 24-hour cooldown
+- Temporary extra bids with paired main-suspension logic and backup recovery
+- Market-aware protection — compares buy-now listings against the bid plan and tightens exposure when the market shifts
+- Configurable via `strategy_settings.py` (write caps, observation caps, queue deferral, snapshot age)
 
-```mermaid
-flowchart TD
-    A["Scheduled trigger"] --> B["Load configuration and durable state"]
-    B --> C["Fetch live orders"]
-    C --> D["Startup reconciliation"]
-    D --> E["Select due priority tiers"]
-    E --> F["Observe every due target"]
-    F --> G{"Validated current-run snapshot"}
-    G -->|Missing| H["Validate recreate eligibility"]
-    G -->|Competitive| I["Keep or reduce excess exposure"]
-    G -->|Outbid| J["Plan bounded adjustment"]
-    G -->|Ambiguous| K["Preserve state and defer"]
-    H --> R["Rank one candidate per target"]
-    I --> R
-    J --> R
-    K --> M["No unsafe action"]
-    R --> L["Reserve attempt budget and write"]
-    L --> N["Verify response and reconcile"]
-    M --> O["Persist run summary"]
-    N --> O
-    O --> P["Atomic state update"]
-    P --> Q["Notifications and data sync"]
-```
+### CSFloat Browser Watcher
 
-### Bid lifecycle
+A Node.js/Playwright browser automation layer that controls a signed-in Chrome session on CSFloat, reads listing cards, evaluates demand, and places short-lived bargain offers.
 
-| Phase | Behavior |
-| --- | --- |
-| Startup | Load configuration, validate state shape, and fetch authoritative live orders |
-| Reconciliation | Match configured targets to live orders while preserving ambiguous or in-flight state |
-| Tier selection | Concentrate expensive checks on active targets and rotate quieter targets less frequently |
-| Market evaluation | Compare current competition, comparable listings, and target-specific safety bounds |
-| Action planning | Prefer the smallest valid update and avoid unnecessary cancel/recreate cycles |
-| Write verification | Treat the remote response and later reconciliation as authoritative evidence |
-| Persistence | Atomically save state, summaries, cooldowns, and tier movement |
-| Finalization | Publish notifications and safely synchronize bot-managed data |
+- Reads visible listing cards, opens detail pages, parses demand rows, calculates edge
+- Pump-risk detection with graph analysis and robust percentiles
+- Balance policy refreshed before every scan; permanent cash reserve enforced
+- Offer-rate pressure — curves up edge requirement as hourly limits fill
+- Counter-accept and counter-back logic using dynamic session minimum edge
+- Network pause/resume with in-flight markers
+- Discord notifications for submissions, counters, and bargains
 
-### Tiered scheduling
+### CSMarket Auto Buyer
 
-Targets move among hot, mid, and cold tiers based on recent activity. The cycle
-runner gives active targets priority while periodically including quieter
-tiers. Pre-move and post-move validation require each target to appear in
-exactly one tier, preventing duplicate orders and silent omissions.
+A Python API scanner and purchase worker that continuously polls CSFloat's official listings API, matches configured targets, and executes buys.
 
-| Mode | Purpose |
-| --- | --- |
-| `cycle` | Normal unattended scheduling across all due tiers |
-| `hot` | Active and high-priority targets only |
-| `mid` | Medium-frequency targets only |
-| `cold` | Low-frequency targets only |
+- Three modes: Fastest (19s solo), Dual (45s with Browser Watcher), Slow (40s solo)
+- Paginates beyond the first 50-listing API page
+- HTTP 429 recovery ladder with supervisor-applied retry guards
+- Correlated shutdown contract with fresh result artifacts
+- Shared 24-hour account suspension hold with the Browser Watcher
+- Unclean-recovery ready marker after state validation
 
-### Observation-first write scheduling
+### CS.Money Auto Buyer
 
-Each due listing is observed before normal order writes begin. The existing bid
-strategy produces at most one candidate from that current-run snapshot, then a
-global queue ranks safety corrections, temporary-main restoration, actionable
-outbids, missing-order repair, quantity repair, and exposure-reducing decreases.
-Decrease priority uses `(current price - target price) * quantity`, matching the
-capital reserved by a buy order.
+A standalone browser scanner and purchase worker for CS.MONEY Market Mode using Playwright with a dedicated Chrome profile.
 
-The default run has no artificial write-count ceiling. Candidates execute in
-priority order until work is exhausted, their market snapshots become stale, or
-a write-side HTTP 429 trips the run-local circuit breaker. The circuit breaker
-checkpoints state and defers all remaining mutations to the next scheduled run;
-read/search exhaustion retains the longer persisted cooldown. Failed requests
-are counted, and one listing cannot write twice in a run. Deferred metadata and
-the observation cursor live under `bid_scheduler` in `data/state.json`;
-persisted entries affect fairness only and are never executed without a fresh
-valid observation.
+- 409-target / 8,175-branch policy with exact sticker identity and pinned canonical weapon/paint data
+- Dry-run default; live buying requires triple-armed configuration
+- Dynamic localhost CDP allocation with stable ordered-ID continuity
+- Child-owned recovery ladder with bounded retries
+- Runtime status and recovery-exhausted contracts
+- Correlated shutdown with browser cleanup
 
-An ambiguous PATCH/POST/DELETE transport timeout also checkpoints and stops the
-run because the remote outcome cannot be known safely. The next complete order
-snapshot reconciles that outcome before any retry. The 80-minute watchdog
-checkpoints state and pre-arms a one-run skip before the workflow's 85-minute
-hard timeout.
+## Inventory management
 
-CSFloat account suspensions are detected from API error code `138` on the
-monitor's existing requests; no separate per-run suspension probe is sent. The
-first confirmed response atomically records a 24-hour cooldown in
-`data/state.json` and terminates the invocation before any further market
-activity. Scheduled runs fail closed against that persisted deadline, and the
-workflow checkpoints it so the hold survives fresh runners and restarts.
+### CS.Money Auto Lister
 
-GitHub Actions runs are serialized and queued dispatches check out the latest
-`master` rather than their captured dispatch SHA. Runtime checkpoints retry a
-lost or transient push only while the remote still matches the run's exact
-base. If `master` advances, the checkpoint fails closed and creates no side
-branch; the next scheduled run reconciles from the new remote head.
+An automated browser lister that reconciles owned CS.MONEY inventory, creates or renews listings, updates prices, and confirms sales.
 
-Tune these controls in `src/market_monitor/strategy_settings.py`:
+- Multi-account support with separate Chrome profiles
+- Browser tab cleanup — closes target pages after exit without killing shared Chrome
+- Per-item outcome records: already_listed, listed, price_updated, extension_required
+- Rate-limit timeout handling with bounded retries
+- Verification grace period before confirming sales
 
-- `MAX_WRITE_OPERATIONS_PER_RUN` (`0` disables the artificial count ceiling)
-- `RESERVED_RESTORATION_SAFETY_WRITES` (used only with a finite ceiling)
-- `MAX_OBSERVATIONS_PER_RUN` (`0` observes every due listing)
-- `MAX_QUEUE_DEFERRAL_RUNS`
-- `MAX_MUTATION_SNAPSHOT_AGE_SECONDS`
+### Skins.com Auto Lister
 
-### Temporary extra bids
+An automated browser lister for Skins.com that reconciles inventory, creates/delists/updates listings, and manages price synchronization.
 
-Temporary extras are declared in encrypted `config/temporary_bids.py`. Add
-`"temporary_suspend": True` to the paired main listing while leaving its exact
-recreation policy, price, quantity, and identity fields intact. A temporary
-entry must carry `"temporary_extra": True`; use `main_tracking_key` when the
-pair should not be inferred from the initial one-to-one config order.
+- Multi-account support
+- Shares infrastructure with CS.MONEY automations
+- Tab cleanup targeting skins.com pages while preserving unrelated tabs
+- Calibration listing verification required before production enablement
+- Per-item outcomes: already_listed, listed, delisted, price_updated
 
-The monitor adopts a blank temporary order ID only when a complete paginated
-active-order sync finds one unique, strongly constrained semantic match. It
-then durably records the pair, suspends the main through the shared write
-budget, and leaves the main tag in place. Once a later complete sync proves the
-temporary order is gone, restoration recreates the saved main subject to the
-current floor, cap, tick, quantity, hybrid-property, and active-order-count
-guards. Ambiguity, incomplete reads, count mismatches, missing tags, or policy
-failures preserve state and block destructive action.
+## Marketplace discovery
 
-Temporary orders never participate in repricing, recreation, quantity top-up,
-tiering, cleanup, or scraper exports. The canonical main listing remains in the
-normal tier file, so downstream `active_bid_prices.json` consumers retain its
-last verified/configured threshold throughout suspension.
+### Skinport + CS.Money Deal Finder
 
-### Market-aware protection
+A daily two-stage browser workflow that scans Skinport and CS.Money for sticker deal opportunities, normalizes results, and publishes ranked alerts.
 
-The monitor can compare valid buy-now listings with the current order plan and
-temporarily tighten exposure when the visible market changes. Missing,
-incomplete, or invalid comparison data fails closed rather than authorizing a
-wider bid. An ambiguous write outcome is preserved for reconciliation instead
-of being blindly retried.
+- Two independently runnable stages with split-stage recovery
+- Component recovery — one marketplace's sign-in failure queues the other
+- Repair actions for sign-in failures per marketplace
+- Completion proof via timestamped JSON with per-check status records
+- Shared Chrome profiles with exclusive resource locking
 
-## 2. Auto-lister
+### CS Market Arbitrage Scanner
 
-The auto-lister takes over after acquisition. It compares configured inventory
-with authoritative active-listing and inventory responses, then creates,
-maintains, renews, or retires listings conservatively.
+A read-only scanner that compares listings from Skins.com, CS.MONEY, and SkinSwap against realistic CSFloat resale prices, writing ranked arbitrage reports.
 
-```mermaid
-flowchart TD
-    A["Run starts"] --> B["Load definitions and durable state"]
-    B --> C["Fetch active listings and inventory"]
-    C --> D{"Inputs authoritative?"}
-    D -->|No| E["Record failure; preserve prior state"]
-    D -->|Yes| F["Reconcile each configured item"]
-    F --> G{"Observed state"}
-    G -->|Already active| H["Record current listing"]
-    G -->|Expired| I["Apply renewal policy"]
-    G -->|Available and unlisted| J["Create listing"]
-    G -->|Repeatedly unavailable| K["Confirm sold state"]
-    H --> L["Persist verified result"]
-    I --> L
-    J --> L
-    K --> L
-```
+- Three source marketplaces with dedicated Chrome profiles per source
+- Immutable receipt-based run artifacts with digest verification
+- Retry command that re-runs only failed sources from a prior receipt
+- Discord notifications and Git publication of report history
+- Read-only — no purchase, listing, or bid-write behavior
 
-The lister never infers a sale from a generic API or browser failure. Missing
-inventory requires repeated explicit evidence, while failed or incomplete
-reads leave the previous state intact. Bot-managed files are written
-atomically and synchronized only after the run reaches a verified terminal
-state.
+### Additional scanners
 
-## 3. Marketplace watchers
+The system also includes monitors for BUFF and the Steam Community Market, evaluating currency-normalized opportunities and publishing compact summaries. These services are isolated from order maintenance — an alerting outage does not alter active bids.
 
-The watcher layer searches several CS marketplaces for configured
-opportunities. Although each source adapter differs, the services share one
-high-level contract:
+## Support services
 
-```text
-load targets -> fetch source -> normalize currency and item identity
-             -> validate source-specific requirements -> rank results
-             -> publish alerts -> write structured completion evidence
-```
+### Case Opener
 
-### Skinport and CS.Money finder
+Automates daily CS2 case openings across five signed-in Chrome profiles, reading Discord social codes, opening cases via Windows UI Automation, and tracking streaks.
 
-The daily finder contains two independently runnable stages. It can scan both
-sources together or resume only the unfinished stage after an interruption.
-Its completion artifact records the selected mode, completed checks,
-authentication health, source-level errors, alert counts, and final status.
+- Opens cases for 5 Chrome profiles using the Windows accessibility tree
+- Discord channel integration for social-code discovery with 48-hour deduplication
+- 7th streak day bonus logic with profile-specific handling
+- Cloudflare verification handling with three recovery rounds
+- Account-specific Discord webhook notifications
+- 24-hour cadence with opened/skipped/verification-blocked tracking
 
-This split-stage design prevents a late failure from repeating already
-completed browser work and makes partial recovery explicit rather than
-guessing from the last log line.
+### Steam ASF Keeper
 
-### Steam market watcher
+Manages an ArchiSteamFarm process to report CS2 as played across multiple Steam accounts, providing before/after proof verification — a prerequisite for the Case Opener's CS2 playtime requirement.
 
-This workflow normalizes currency, evaluates configured item and condition
-requirements, ranks qualifying results, and publishes a compact summary. Its
-state and failures are isolated from order maintenance, so an alerting outage
-does not alter active bids.
+- Strict PID/creation-time/path/CLI isolation
+- Per-account proof: before/after official Steam-recorded CS2 minutes comparison
+- Hard invariants: ASF IPC on localhost only, banned port list, no browser automation
+- DPAPI-protected secrets with current-user ACL on runtime directory
+- 192 automated tests with verified live acceptance
 
-### BUFF watcher
-
-The BUFF adapter is retained as an optional integration but is disabled by
-default. Disabled means the workflow is not inspected, launched, or included
-as a completion dependency until it is explicitly enabled.
-
-## 4. Target definition sync
-
-Target configuration changes independently from runtime code. A dedicated
-daily workflow validates source definitions and publishes deterministic target
-files consumed by the buy-order monitor and watchers.
-
-The sync process:
-
-1. reads the current source definitions;
-2. validates required fields, types, uniqueness, and supported names;
-3. generates deterministic target configuration;
-4. verifies the generated files before replacement;
-5. atomically publishes the update;
-6. records a timestamped completion result;
-7. synchronizes changes only after validation succeeds.
-
-Separating definition maintenance from transaction processes reduces the risk
-that a malformed target update reaches a live workflow.
-
-## Reliability model
+## Reliability
 
 | Failure condition | System response |
 | --- | --- |
 | Missing or malformed configuration | Reject the run before marketplace writes |
-| Incomplete source response | Preserve prior state and record a failed/incomplete result |
+| Incomplete source response | Preserve prior state and record a failed result |
 | Unknown order or listing outcome | Keep the item uncertain and refuse a duplicate submission |
 | Authentication failure | Record an actionable failure without claiming successful work |
 | Interrupted multi-stage scan | Preserve completed-stage evidence and resume only unfinished work |
 | Missing or corrupt state | Restore a validated backup when available; otherwise fail closed |
-| Repeated item absence | Require corroborating evidence before recording a sale |
-| Optional component disabled | Exclude it completely from execution and completion requirements |
+| HTTP 429 (rate limit) | Checkpoint state and defer mutations to the next run |
+| Account suspension | Atomic 24-hour cooldown, immediate termination, persisted deadline |
 
-### State, logs, and completion evidence
+## Evidence and observability
 
 The system distinguishes three evidence layers:
 
-- **durable runtime state** for reconciliation context, pending work, and last
-  known authoritative observations;
-- **structured run artifacts** containing explicit status, timestamps, mode,
-  counts, and failure classifications;
-- **human-readable logs** for detailed decisions and diagnostics.
+- **Durable runtime state** for reconciliation context, pending work, and last known authoritative observations
+- **Structured run artifacts** containing explicit status, timestamps, mode, counts, and failure classifications
+- **Human-readable logs** for detailed decisions and diagnostics
 
-A process launch or a single log message is not treated as proof of successful
-work. Completion is based on a terminal run artifact plus internally
-consistent counts and timestamps. Logs remain supporting evidence and make
-failures explainable without becoming the only source of truth.
-
-### Persistence safety
-
-- State replacement is atomic where practical.
-- Previous known-good snapshots are retained for recovery.
-- Generated configuration is validated before publication.
-- Ambiguous remote writes remain pending until reconciliation.
-- Data synchronization occurs only after a completed run boundary.
-- Runtime secrets and account-specific values remain outside public source.
+A process launch or a single log message is not treated as proof of successful work. Completion is based on a terminal run artifact plus internally consistent counts and timestamps.
 
 ## Technology
 
-- Python for orchestration, state transitions, data validation, APIs, and
-  testing;
-- JavaScript/Node.js for selected browser-driven workflows;
-- Playwright and Selenium for isolated browser adapters;
-- REST APIs for orders, listings, pricing, and inventory;
-- GitHub Actions and controlled local launchers for scheduled execution;
-- structured JSON/JSONL artifacts and atomic files for run history;
-- Git-based configuration and validated data synchronization.
+- **Python 3.13+** — orchestration, state transitions, data validation, APIs, testing
+- **Node.js / Playwright** — browser automation for marketplace interaction
+- **REST APIs** — orders, listings, pricing, and inventory
+- **GitHub Actions** — scheduled execution and CI/CD
+- **PowerShell** — local launchers and operational tooling
+- **Structured JSON/JSONL** — run history, state snapshots, completion evidence
+- **Git** — configuration publication and validated data synchronization
 
 ## Repository layout
 
-The checked-in code in this repository is the core buy-order monitor and its
-supporting utilities.
-
 ```text
 .
-├── .github/                         # Scheduled and manual workflows
+├── .github/                     # Scheduled and manual workflows
 ├── config/
-│   ├── listings.py                  # Primary configured targets
-│   ├── listings_hot.py              # Active tier
-│   ├── listings_mid.py              # Medium-frequency tier
-│   └── manual_bids.py               # Explicit manual entries
+│   ├── listings.py              # Primary configured targets
+│   ├── listings_hot.py          # Active tier
+│   ├── listings_mid.py          # Medium-frequency tier
+│   └── manual_bids.py           # Explicit manual entries
 ├── data/
-│   ├── state.json                   # Durable monitor state
-│   ├── outbid_stats.json            # Competitive-pressure history
-│   ├── backups/                     # Historical listing/config and run backups
-│   └── reference/                   # Reference datasets and guides
-├── sandbox/
-│   ├── runner.py                    # Isolated live sandbox runner
-│   ├── test_file.py                 # Sandbox compatibility entrypoint
-│   └── test_listings.py             # Sandbox-only listing targets
-├── tests/                           # Unit and regression tests
-├── tools/                           # Manual operational/reporting utilities
+│   ├── state.json               # Durable monitor state
+│   ├── outbid_stats.json        # Competitive-pressure history
+│   ├── backups/                 # Historical listing/config and run backups
+│   └── reference/               # Reference datasets and guides
+├── sandbox/                     # Isolated live sandbox runner
+├── tests/                       # Unit and regression tests
+├── tools/                       # Manual operational/reporting utilities
 ├── src/market_monitor/
-│   ├── monitor.py                   # Main orchestration
-│   ├── monitor_market.py            # Market reads and comparison
-│   ├── monitor_processing.py        # Per-target decisions
-│   ├── monitor_runtime.py           # Runtime and watchdog boundaries
-│   ├── monitor_tiers.py             # Tier movement and validation
-│   ├── listing_loader.py            # Configuration loading and normalization
-│   └── strategy_settings.py         # Central runtime controls
-├── main.py                          # Production monitor entrypoint
-├── requirements.txt
-└── README.md
+│   ├── monitor.py               # Main orchestration
+│   ├── monitor_market.py        # Market reads and comparison
+│   ├── monitor_processing.py    # Per-target decisions
+│   ├── monitor_runtime.py       # Runtime and watchdog boundaries
+│   ├── monitor_tiers.py         # Tier movement and validation
+│   ├── listing_loader.py        # Configuration loading and normalization
+│   └── strategy_settings.py     # Central runtime controls
+├── main.py                      # Production monitor entrypoint
+└── requirements.txt
 ```
 
-## Running the core monitor
-
-Install dependencies in an isolated environment, provide required runtime
-configuration through environment variables, and use the stable entrypoint:
+## Running
 
 ```bash
-python main.py
+pip install -r requirements.txt
+python main.py                          # Core monitor
+python sandbox/test_file.py             # Isolated sandbox
+python tools/show_losing_bids.py        # Read-only losing-bid report
+python -X utf8 -m unittest discover -s tests -p "test_*.py"  # Tests
 ```
 
-Run the isolated sandbox entrypoint:
+## Security
 
-```bash
-python sandbox/test_file.py
-```
+Credentials are supplied through runtime secrets, not source files. Sensitive configuration remains outside public documentation and is protected by the repository's encrypted configuration workflow. This README describes system boundaries and safety properties without publishing account details, private identifiers, bid values, or strategy thresholds.
 
-Generate a read-only losing-bid report from persisted state:
-
-```bash
-python tools/show_losing_bids.py
-python tools/show_losing_bids.py --tier hot
-python tools/show_losing_bids.py --tier mid
-python tools/show_losing_bids.py --tier cold
-```
-
-The report performs no marketplace writes and does not modify state or
-configuration.
-
-Run the automated regression suite:
-
-```bash
-python -X utf8 -m unittest discover -s tests -p "test_*.py"
-```
-
-## Security and public scope
-
-Credentials are supplied through runtime secrets, not source files. Sensitive
-configuration remains outside public documentation and is protected by the
-repository's existing encrypted/configuration workflow. This README describes
-system boundaries and safety properties without publishing account details,
-private identifiers, bid values, or strategy thresholds.
-
-The design prioritizes recoverability, bounded risk, failure isolation, and an
-auditable explanation for every automated decision.
+The design prioritizes recoverability, bounded risk, failure isolation, and an auditable explanation for every automated decision.
