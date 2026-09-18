@@ -1,6 +1,6 @@
 # CS2 Marketplace Trading System
 
-A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 10+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
+A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 12+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
 
 ## Architecture
 
@@ -209,9 +209,9 @@ flowchart TD
 
 A daily two-stage browser workflow that scans Skinport and CS.Money for sticker deal opportunities, normalizes results, and publishes ranked alerts.
 
-- Two independently runnable stages with split-stage recovery
-- Component recovery: one marketplace's sign-in failure queues the other
-- Repair actions for sign-in failures per marketplace
+- Two independently runnable stages with split-stage recovery, if one marketplace fails the other completes independently
+- Component recovery: one marketplace's sign-in failure queues the other as a separate manual-only retry job
+- Repair actions for sign-in failures per marketplace, dedicated scripts that handle interactive re-authentication
 - Completion proof via timestamped JSON with per-check status records
 
 ### CS Market Arbitrage Scanner
