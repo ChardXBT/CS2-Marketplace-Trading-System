@@ -2,6 +2,8 @@
 
 A modular automation platform for CS2 marketplace trading, built with Python and JavaScript/Node.js. This repository contains the core buy-order monitor. The broader system coordinates 12+ services across order management, market discovery, inventory management, and deal analysis on CSFloat, CS.MONEY, Skinport, Skins.com, SkinSwap, BUFF, and the Steam Community Market.
 
+The system has processed over 200,000 marketplace listings, executed 1,000+ successful trades, and generated over US$4,000 in profit across multiple CS2 marketplaces.
+
 ## Architecture
 
 ```mermaid
@@ -146,7 +148,26 @@ flowchart TD
 
 A Node.js/Playwright browser automation layer that controls a signed-in Chrome session on CSFloat, reads listing cards, evaluates demand, and places short-lived bargain offers.
 
-- Reads visible listing cards, opens detail pages, parses demand rows, calculates edge
+```mermaid
+flowchart TD
+    A["Scheduled trigger"] --> B["Refresh balance policy"]
+    B --> C["Scan visible listing cards"]
+    C --> D["Open detail pages"]
+    D --> E["Parse demand rows and calculate edge"]
+    E --> F{"Pump-risk check"}
+    F -->|"Clean"| G{"Edge meets threshold?"}
+    F -->|"Suspicious"| H["Ban or flag item"]
+    G -->|"Yes"| I["Submit bargain offer"]
+    G -->|"No"| J["Skip listing"]
+    I --> K{"Counter received?"}
+    K -->|"Yes"| L["Counter-accept or counter-back"]
+    K -->|"No"| M["Record outcome"]
+    L --> M
+    J --> M
+    H --> M
+    M --> N["Persist state and notify Discord"]
+```
+
 - Pump-risk detection with graph analysis and robust percentiles
 - Balance policy refreshed before every scan, permanent cash reserve enforced
 - Offer-rate pressure: curves up edge requirement as hourly limits fill
