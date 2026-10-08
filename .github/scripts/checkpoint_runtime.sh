@@ -8,6 +8,14 @@ private_log="${RUNTIME_PRIVATE_LOG:-/tmp/bot_output.txt}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export GIT_TERMINAL_PROMPT=0
 
+retry_pause() {
+  # Brief GitHub server outages can outlast consecutive one-second retries.
+  # Bounded exponential pauses still fit the workflow's checkpoint timeout.
+  local delay=30
+  if ((attempt < 4)); then delay=$((5 * (2 ** (attempt - 1)))); fi
+  sleep "$delay"
+}
+
 report_failure() {
   local message="$1"
   echo "::error title=Runtime checkpoint unavailable::$message"
@@ -80,7 +88,7 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   if ! timeout --signal=TERM --kill-after=5s "${git_timeout_seconds}s" git fetch --quiet origin "$branch"; then
     failure_reason="GitHub was unreachable during checkpoint fetch"
     echo "Runtime checkpoint fetch failed; retrying ($attempt/$max_attempts)."
-    sleep "$attempt"
+    retry_pause
     continue
   fi
   remote_sha="$(git rev-parse "refs/remotes/origin/$branch")"
@@ -107,7 +115,7 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
 
   failure_reason="checkpoint push failed while origin/$branch still matched the run base"
   echo "Runtime checkpoint push failed; retrying ($attempt/$max_attempts)."
-  sleep "$attempt"
+  retry_pause
 done
 
 # The last push may have reached GitHub even when its client response was lost.

@@ -136,7 +136,7 @@ jobs:
           PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
 
       - name: Report bounded run evidence
-        if: ${{ steps.monitor.outcome == 'success' }}
+        if: ${{ always() && steps.unlock.outcome == 'success' }}
         timeout-minutes: 1
         run: python .github/scripts/report_run_evidence.py
 
