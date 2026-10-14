@@ -4,6 +4,44 @@ A modular automation platform for CS2 marketplace trading, built with Python and
 
 The system has processed over 200,000 marketplace listings, executed 1,000+ successful trades, and generated over US$4,000 in profit across multiple CS2 marketplaces.
 
+## System in action
+
+The services report their work through Discord. These captures show live bot notifications from October 13, 2026.
+
+### Buy-order monitoring
+
+The monitor updates bids in place and reports the new bid, competing price, and winning status.
+
+![CSFloat monitor reporting successful bid updates](docs/images/trading-bid-alerts.jpg)
+
+### Verified auto-buyer purchases
+
+The [CSMarket Auto Buyer](https://github.com/ChardXBT/Csmarket-Auto-Buyer) reports the matched target, purchase price in cents, and `direct_purchase_confirmed` result.
+
+![Auto buyer reporting three directly confirmed CSFloat purchases](docs/images/autobuyer-confirmed-purchases.jpg)
+
+### Auto-lister lifecycle
+
+The [CSFloat Auto Lister](https://github.com/ChardXBT/auto-lister) tracks active listings and refreshes them at their locked prices. Its Discord reports retain the old and new listing IDs.
+
+![Auto lister tracking active listings and refreshing them at locked prices](docs/images/autolister-listing-lifecycle.jpg)
+
+Sales and new listings appear in the same operational feed.
+
+![Auto lister reporting a completed sale and new marketplace listings](docs/images/autolister-sales-and-relisting.jpg)
+
+### PNL workbook
+
+The auto-lister records sales in `data/workbooks/CS_GO_PnL_Tracker_Final.xlsx`. The two views below were rendered from the latest committed workbook at auto-lister commit `5f0eb7f`, fetched on October 13, 2026. Formulas were recalculated for the captures. Display widths, text contrast, currency formats, and percentage formats were adjusted in a temporary view. The source workbook was not changed.
+
+**Selected profitable trades:** workbook rows 1100–1109. All ten rows show positive profit after fees and positive ROI. The original column headers are repeated above the selected rows. These are selected examples, not a claim that every trade was profitable.
+
+![Selected workbook trades showing cost, sale price, fees, net proceeds, profit and ROI](docs/images/pnl-profitable-trades.png)
+
+**Full workbook totals:** the summary includes all tracked rows, including losses. Values are in USD. This is a snapshot of the tracked workbook, not a live dashboard.
+
+![Full PNL workbook summary showing cost, revenue, fees, net revenue, total profit and overall ROI](docs/images/pnl-current-totals.png)
+
 ## Architecture
 
 ```mermaid
