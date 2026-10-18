@@ -1,0 +1,102 @@
+name: Unit Tests
+on:
+  # Runtime checkpoints are committed with "[skip ci]", so only human code
+  # pushes and manual dispatches start this workflow.
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GIT_TERMINAL_PROMPT: "0"
+  RUNTIME_PRIVATE_LOG: /tmp/test_output.txt
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository code
+        id: checkout
+        timeout-minutes: 5
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        timeout-minutes: 5
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install git-crypt
+        timeout-minutes: 5
+        run: sudo apt-get install -y git-crypt
+
+      - name: Unlock git-crypt
+        id: unlock
+        timeout-minutes: 3
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          umask 077
+          trap 'rm -f git-crypt-key' EXIT
+          printf '%s' "$GIT_CRYPT_KEY" | base64 -d > git-crypt-key
+          git-crypt unlock git-crypt-key
+
+      - name: Install dependencies
+        timeout-minutes: 7
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Run tests
+        id: tests
+        timeout-minutes: 10
+        # No marketplace or Discord credentials are provided to this step: the
+        # suite mocks every external call, and a stray live request must fail.
+        run: |
+          printf '[WORKFLOW] unit tests for %s\n' "$GITHUB_SHA" > "$RUNTIME_PRIVATE_LOG"
+          # Detailed output (test names, simulated bot messages) stays out of the
+          # public job log and is delivered to the private run-log webhook.
+          if PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 python -X utf8 -m unittest discover -s tests -p "test_*.py" >> "$RUNTIME_PRIVATE_LOG" 2>&1; then
+            echo "Unit tests passed."
+          else
+            echo "::error title=Unit tests failed::Detailed output was kept out of Actions logs and sent to the private run-log webhook."
+            exit 1
+          fi
+
+      - name: Verify the test run left the checkout unchanged
+        id: worktree
+        if: ${{ always() && steps.unlock.outcome == 'success' }}
+        timeout-minutes: 2
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            printf '\n[WORKFLOW] Test run modified tracked files:\n' >> "$RUNTIME_PRIVATE_LOG"
+            git status --porcelain >> "$RUNTIME_PRIVATE_LOG"
+            echo "::error title=Test run modified tracked files::Details were sent to the private run-log webhook."
+            exit 1
+          fi
+          echo "Checkout unchanged by the test run."
+
+      - name: Send logs to Discord
+        if: ${{ always() && steps.unlock.outcome == 'success' }}
+        # Observability must not rewrite the test result; the helper still exits
+        # nonzero and emits a warning when delivery fails.
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          UNLOCK_OUTCOME: ${{ steps.unlock.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.worktree.outcome }}
+          MONITOR_OUTCOME: ${{ steps.tests.outcome }}
+        run: python .github/scripts/send_private_log.py

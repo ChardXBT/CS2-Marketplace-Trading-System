@@ -296,7 +296,7 @@ The system also includes monitors for BUFF and the Steam Community Market, evalu
 | Authentication failure | Record an actionable failure without claiming successful work |
 | Interrupted multi-stage scan | Preserve completed-stage evidence and resume only unfinished work |
 | Missing or corrupt state | Restore a validated backup when available, otherwise fail closed |
-| HTTP 429 (rate limit) | Checkpoint state and defer mutations to the next run |
+| HTTP 429 (rate limit) | Single write 429: defer that mutation and continue; sustained 429s: checkpoint state, end the run, and hold a fixed cooldown before the next run |
 | Account suspension | Atomic 24-hour cooldown, immediate termination, persisted deadline |
 
 ## Evidence and observability
