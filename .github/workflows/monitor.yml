@@ -33,7 +33,7 @@ jobs:
       - name: Check dispatch freshness
         id: admission
         timeout-minutes: 3
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -70,7 +70,7 @@ jobs:
         id: checkout
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 5
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # A queued dispatch can start after an earlier serialized run has
           # checkpointed newer encrypted state. Always begin at live master.
@@ -84,7 +84,7 @@ jobs:
         id: setup_python
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 5
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
           cache: pip
