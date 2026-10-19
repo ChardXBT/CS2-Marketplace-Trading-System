@@ -75,6 +75,37 @@ flowchart LR
 
 Each service owns a narrow responsibility and produces durable run evidence. Failures remain isolated, a watcher outage cannot interrupt order maintenance, and a listing failure cannot corrupt buy-order state. A centralized supervisor orchestrates the full lifecycle: scheduling, process ownership, recovery after crashes, network-aware pauses, and coordinated shutdowns.
 
+### Extension portfolio
+
+The portfolio spans discovery, buying, buy-order management, listing, and trade delivery. This inventory includes existing projects at all stages, from research to live operation. The sections below describe selected implementations in detail.
+
+**Marketplace automation**
+
+| Marketplace | Projects |
+| --- | --- |
+| **CSFloat** | CSFloat Auto Lister; CSMarket Auto Buyer; CSFloat Browser Watcher; CSFloat Buy-Order Monitor (Backup) |
+| **BUFF163** | BUFF Auto Lister; BUFF Auto Buyer; BUFF Market Scanner; BUFF Buy-Order Bot |
+| **CS.MONEY** | CS.MONEY Auto Lister; CS.MONEY Auto Buyer; Skinport + CS.MONEY Deal Finder |
+| **Skins.com** | Skins.com Auto Lister; Skins.com Auto Buyer |
+| **Skinport** | Skinport + CS.MONEY Deal Finder |
+| **Steam** | Steam Auto Buyer; Steam Market Scanner; Steam Trade Acceptor; Steam Auto Trader (Research) |
+| **Cross-market** | CS Market Arbitrage Scanner; CS:GO Price Checker |
+
+**Shared operations and supporting tools**
+
+| Area | Projects |
+| --- | --- |
+| **Bot management** | Bot Supervisor; Supervisor Remote Dashboard; Supervisor Reference Model |
+| **Alerts and watchlists** | CS Notifier; CS2 Watchlist Manager; Steam Profile Watchlist |
+| **Session and browser tools** | Steam Session Keeper (ASF); CSFloat Session Launcher; Case Opener |
+| **Reference projects** | Counter-Strike 2 Links |
+
+### TBA
+
+| Marketplace | Planned projects | Dependency |
+| --- | --- | --- |
+| **Youpin** | Youpin Auto Lister; Youpin Auto Buyer; Youpin Scanner; Youpin Buy-Order Bot | Account access pending |
+
 ## CSFloat Buy-Order Monitor
 
 The core of the system. A Python platform built on mixin composition. `MarketMixin`, `ProcessingMixin`, `RuntimeMixin`, and `TierMixin` combine into a `MultiMonitor` that runs a continuous poll loop against CSFloat's marketplace API.
