@@ -28,6 +28,22 @@ report_failure() {
   exit 1
 }
 
+report_deferred() {
+  # A checkpoint that lost the publish race is not a run failure: each
+  # invocation reconciles live state from the newest branch tip at startup,
+  # so the discarded snapshot is rebuilt on the next scheduled run. Surface
+  # the deferral as a warning instead of a red run.
+  local message="$1"
+  echo "::warning title=Runtime checkpoint deferred::$message"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '### Runtime checkpoint deferred\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+  fi
+  if [[ -f "$private_log" ]]; then
+    printf '\n[CHECKPOINT DEFERRED] %s\n' "$message" >> "$private_log"
+  fi
+  exit 0
+}
+
 if [[ ! "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
   report_failure "RUNTIME_CHECKPOINT_MAX_ATTEMPTS must be a positive integer."
 fi
@@ -83,6 +99,10 @@ checkpoint_parent="$(git rev-parse HEAD^)"
 
 published=false
 failure_reason=""
+# Set only when the branch tip was positively observed past this run's base:
+# the distinguishing signature of a publish race (overlapping scheduled runs
+# and live bots push [skip ci] checkpoints around the clock).
+remote_moved=false
 
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   if ! timeout --signal=TERM --kill-after=5s "${git_timeout_seconds}s" git fetch --quiet origin "$branch"; then
@@ -100,12 +120,23 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
     break
   fi
 
-  # Never merge/rebase an unattended runtime checkpoint across a human or
-  # workflow update. The next invocation starts from the new branch head and
-  # reconciles live CSFloat state without creating side branches.
   if [[ "$remote_sha" != "$checkpoint_parent" ]]; then
-    failure_reason="origin/$branch advanced while the monitor was running"
-    break
+    remote_moved=true
+    # origin/$branch advanced while the monitor ran. Replay this run's single
+    # checkpoint commit onto the newer tip: unrelated updates (human code
+    # pushes, disjoint state files) accept the replay cleanly. A conflicting
+    # replay means a parallel runtime checkpoint already wrote newer state to
+    # the same generated files — the newer remote tip wins and this run's
+    # snapshot defers to the next invocation's reconciliation.
+    if git rebase --autostash "origin/$branch"; then
+      checkpoint_sha="$(git rev-parse HEAD)"
+      checkpoint_parent="$(git rev-parse HEAD^)"
+      echo "Runtime checkpoint rebased onto advanced origin/$branch."
+    else
+      git rebase --abort || true
+      failure_reason="origin/$branch advanced while the monitor was running and the checkpoint could not be replayed onto the newer tip"
+      break
+    fi
   fi
 
   if timeout --signal=TERM --kill-after=5s "${git_timeout_seconds}s" git push origin "HEAD:$branch"; then
@@ -113,24 +144,47 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
     break
   fi
 
-  failure_reason="checkpoint push failed while origin/$branch still matched the run base"
+  # A rejection here is ambiguous: the branch may have moved again (race) or
+  # the transport may have failed (auth, network). The next attempt's fetch —
+  # or the final verification read — classifies it.
+  failure_reason="the checkpoint push was rejected or interrupted"
   echo "Runtime checkpoint push failed; retrying ($attempt/$max_attempts)."
   retry_pause
 done
 
 # The last push may have reached GitHub even when its client response was lost.
-# Perform one final bounded read before declaring the durable checkpoint absent.
+# Perform one final bounded read before declaring the durable checkpoint absent;
+# it also classifies an exhausted retry loop: a tip that keeps moving past this
+# run's base is a publish race, while a tip still at the base means earlier
+# rejections were real publish failures.
 if [[ "$published" != "true" ]] \
   && timeout --signal=TERM --kill-after=5s "${git_timeout_seconds}s" git fetch --quiet origin "$branch"; then
   remote_sha="$(git rev-parse "refs/remotes/origin/$branch")"
   if [[ "$remote_sha" == "$checkpoint_sha" ]]; then
     published=true
+  elif [[ "$remote_sha" != "$checkpoint_parent" ]]; then
+    remote_moved=true
+    # Keep a more specific replay-conflict diagnosis when one was recorded.
+    if [[ "$failure_reason" != *"could not be replayed"* ]]; then
+      failure_reason="origin/$branch advanced while the monitor was running"
+    fi
+  elif timeout --signal=TERM --kill-after=5s "${git_timeout_seconds}s" git push origin "HEAD:$branch"; then
+    # The remote sat at this run's base, so one bounded last-chance push is a
+    # fast-forward. Its failure below is attributable to transport or auth.
+    published=true
+  else
+    remote_moved=false
+    failure_reason="checkpoint push failed while origin/$branch still matched the run base"
   fi
 fi
 
 if [[ "$published" == "true" ]]; then
   echo "Runtime checkpoint published to $branch."
   exit 0
+fi
+
+if [[ "$remote_moved" == "true" ]]; then
+  report_deferred "Runtime checkpoint was not published because ${failure_reason:-origin/$branch advanced while the monitor was running}. No recovery branch was created; the next run will reconcile from origin/$branch."
 fi
 
 report_failure "Runtime checkpoint was not published because ${failure_reason:-the push could not be confirmed}. No recovery branch was created; the next run will reconcile from origin/$branch."
