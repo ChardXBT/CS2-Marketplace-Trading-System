@@ -1,0 +1,58 @@
+# Gemini Code Assist on GitHub — repo config
+# Schema: https://docs.cloud.google.com/gemini/docs/code-review/customize-repo-review#schema
+have_fun: false
+
+memory_config:
+  disabled: false            # no-op unless multi-repo group memory is enabled in Cloud console
+
+code_review:
+  disable: false
+  comment_severity_threshold: MEDIUM   # MEDIUM keeps real-bug signal without LOW nitpick spam
+  max_review_comments: 25              # cap noise + review size on large PRs (default is unlimited)
+  pull_request_opened:
+    help: false                        # don't post a help comment on every PR
+    summary: true                      # auto-summary on open — cheap and high-signal
+    code_review: true
+    include_drafts: false              # skip draft PRs — review only when marked ready (saves quota)
+
+ignore_patterns:
+  # vendored / generated
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/out/**"
+  - "**/generated/**"
+  - "**/vendor/**"
+  - "**/.next/**"
+  - "**/*.min.js"
+  - "**/*.min.css"
+  - "**/*.map"
+  - "**/*.snap"
+  # caches / test artifacts
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/.pytest_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/.ruff_cache/**"
+  - "**/coverage/**"
+  - "**/htmlcov/**"
+  # lockfiles
+  - "**/package-lock.json"
+  - "**/yarn.lock"
+  - "**/pnpm-lock.yaml"
+  - "**/poetry.lock"
+  - "**/uv.lock"
+  - "**/Pipfile.lock"
+  # data / artifacts / binary
+  - "**/data/**"
+  - "**/*.csv"
+  - "**/*.enc"
+  - "**/logs/**"
+  - "**/*.log"
+  - "**/*.parquet"
+  - "**/*.pkl"
+  - "**/*.pickle"
+  - "**/*.db"
+  - "**/*.sqlite*"
+  # docs folders only (README/*.md in root still reviewed — doc drift is real signal)
+  - "**/docs/**"
