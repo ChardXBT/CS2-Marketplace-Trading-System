@@ -7,6 +7,15 @@
 .github/workflows/*.yml !filter !diff
 .github/workflows/*.yaml !filter !diff
 .github/scripts/send_private_log.py !filter !diff
+.github/scripts/prepare_git_crypt.sh !filter !diff
+.github/dependabot.yml !filter !diff
+
+# Vendored build inputs: the git-crypt binary must run before unlock, and the
+# wheels hold only public PyPI packages. -text keeps them byte-exact.
+.github/vendor/** !filter !diff -text
+
+# Pinned public dependencies, deliberately plaintext so Dependabot can read them.
+requirements.txt !filter !diff
 
 # Public-facing surfaces: the root README and the screenshots it embeds must
 # stay plaintext so GitHub can render them. Anchored so nested READMEs (e.g.

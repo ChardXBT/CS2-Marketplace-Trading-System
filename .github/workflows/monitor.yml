@@ -18,7 +18,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   GIT_TERMINAL_PROMPT: "0"
   RUNTIME_PRIVATE_LOG: /tmp/bot_output.txt
 
@@ -30,19 +29,42 @@ jobs:
       contents: write
       actions: read
     steps:
+      - name: Harden runner
+        id: harden_runner
+        timeout-minutes: 3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          # disable-telemetry is only accepted together with egress-policy: block.
+          egress-policy: audit
+
+      - name: Announce pending egress allowlist
+        timeout-minutes: 1
+        run: |
+          echo "::notice title=Harden-Runner audit mode::Block mode is a separate follow-up; intended allowlist: github.com, *.githubusercontent.com, pypi.org, files.pythonhosted.org, archive.ubuntu.com, security.ubuntu.com, csfloat.com, discord.com"
+
       - name: Check dispatch freshness
         id: admission
         timeout-minutes: 3
-        uses: actions/github-script@v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const maxAgeMinutes = 20;
-            const { data: run } = await github.rest.actions.getWorkflowRun({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: context.runId,
-            });
+            let run;
+            for (let attempt = 1; ; attempt++) {
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: context.runId,
+                }));
+                break;
+              } catch (error) {
+                if (attempt >= 2) throw error;
+                core.warning(`getWorkflowRun failed (${error.status ?? error.message}); retrying in 5s.`);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+              }
+            }
             const createdAt = Date.parse(run.created_at);
             const ageMinutes = (Date.now() - createdAt) / 60000;
             const shouldRun = Number.isFinite(ageMinutes)
@@ -59,6 +81,24 @@ jobs:
               );
             }
 
+      - name: Check runner clock skew
+        id: clock_skew
+        if: steps.admission.outputs.should_run == 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        run: |
+          server_date="$(curl -4 -sI --max-time 10 https://api.github.com | grep -i '^date:' | cut -d' ' -f2- | tr -d '\r')" || true
+          if [ -z "$server_date" ]; then
+            echo "::warning title=Clock skew unknown::Could not read the api.github.com Date header."
+            exit 0
+          fi
+          skew=$(( $(date -u +%s) - $(date -u -d "$server_date" +%s) ))
+          if [ "${skew#-}" -gt 120 ]; then
+            echo "::warning title=Runner clock skew::Runner clock differs from api.github.com by ${skew}s."
+          else
+            echo "Runner clock skew ${skew}s."
+          fi
+
       - name: Initialize private run log
         id: initialize_log
         if: steps.admission.outputs.should_run == 'true'
@@ -70,7 +110,7 @@ jobs:
         id: checkout
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 5
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A queued dispatch can start after an earlier serialized run has
           # checkpointed newer encrypted state. Always begin at live master.
@@ -79,39 +119,21 @@ jobs:
           # commit. Fetching the repository's full history and every ref can
           # exceed this step's timeout as the runtime history grows.
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Python
         id: setup_python
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 5
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.10"
-          cache: pip
+          python-version: "3.12"
 
-      - name: Install git-crypt
-        id: install_git_crypt
+      - name: Prepare git-crypt
+        id: prepare_git_crypt
         if: steps.admission.outputs.should_run == 'true'
-        timeout-minutes: 5
-        run: |
-          set +e
-          run_apt() { sudo apt-get install -y git-crypt; }
-          out=$(run_apt 2>&1); rc=$?
-          if [ $rc -ne 0 ] && printf '%s' "$out" | grep -qE "Temporary failure resolving|Could not resolve|Name or service not known"; then
-            echo "::notice::apt DNS failure detected; resolving apt hosts via DoH and pinning /etc/hosts (upstream DNS outage workaround)"
-            apt_hosts=$(grep -rhoE 'https?://[^/[:space:]"]+' /etc/apt/sources.list /etc/apt/sources.list.d/ /etc/apt/apt-mirrors.txt 2>/dev/null | sed -E 's|https?://||' | sort -u)
-            for h in $apt_hosts azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
-              getent hosts "$h" >/dev/null 2>&1 && continue
-              ip=$(curl -sf --max-time 10 "https://dns.google/resolve?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
-              if [ -z "$ip" ]; then
-                ip=$(curl -sf --max-time 10 -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
-              fi
-              [ -n "$ip" ] && { echo "$ip $h" | sudo tee -a /etc/hosts; echo "::notice::pinned $h -> $ip"; }
-            done
-            out=$(run_apt 2>&1); rc=$?
-          fi
-          printf '%s\n' "$out"
-          exit "$rc"
+        timeout-minutes: 8
+        run: bash .github/scripts/prepare_git_crypt.sh
 
       - name: Unlock git-crypt
         id: unlock
@@ -129,7 +151,9 @@ jobs:
         id: dependencies
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 7
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
+        env:
+          PIP_RETRIES: "5"
+        run: python -m pip install --disable-pip-version-check --no-index --find-links .github/vendor/wheels -r requirements.txt
 
       - name: Validate decrypted runtime configuration
         id: validate
@@ -151,7 +175,7 @@ jobs:
           LISTING_TIER: ${{ github.event.inputs.listing_tier || 'cycle' }}
         run: |
           echo "Running monitor. Detailed bot output is saved privately and sent to Discord."
-          PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
+          PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 exec python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
 
       - name: Report bounded run evidence
         if: ${{ always() && steps.unlock.outcome == 'success' }}
@@ -160,8 +184,13 @@ jobs:
 
       - name: Checkpoint runtime changes
         id: checkpoint
-        if: ${{ steps.monitor.outcome == 'success' }}
+        # A failed monitor still checkpoints whatever state it reached; the
+        # script's validator refuses malformed state before anything is staged.
+        if: ${{ !cancelled() && (steps.monitor.outcome == 'success' || steps.monitor.outcome == 'failure') }}
         timeout-minutes: 10
+        env:
+          RUNTIME_CHECKPOINT_MESSAGE: "Auto-update: market prices and bid sync [skip ci]"
+          GH_PUSH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/checkpoint_runtime.sh
 
       - name: Send logs to Discord
@@ -177,6 +206,9 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ADMISSION_OUTCOME: ${{ steps.admission.outcome }}
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SETUP_PYTHON_OUTCOME: ${{ steps.setup_python.outcome }}
+          PREPARE_GIT_CRYPT_OUTCOME: ${{ steps.prepare_git_crypt.outcome }}
+          DEPENDENCIES_OUTCOME: ${{ steps.dependencies.outcome }}
           UNLOCK_OUTCOME: ${{ steps.unlock.outcome }}
           VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
           MONITOR_OUTCOME: ${{ steps.monitor.outcome }}

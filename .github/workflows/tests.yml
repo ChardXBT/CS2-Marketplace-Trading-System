@@ -12,7 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   GIT_TERMINAL_PROMPT: "0"
   RUNTIME_PRIVATE_LOG: /tmp/test_output.txt
 
@@ -26,38 +25,20 @@ jobs:
       - name: Checkout repository code
         id: checkout
         timeout-minutes: 5
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Python
         timeout-minutes: 5
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.10"
-          cache: pip
+          python-version: "3.12"
 
-      - name: Install git-crypt
-        timeout-minutes: 5
-        run: |
-          set +e
-          run_apt() { sudo apt-get install -y git-crypt; }
-          out=$(run_apt 2>&1); rc=$?
-          if [ $rc -ne 0 ] && printf '%s' "$out" | grep -qE "Temporary failure resolving|Could not resolve|Name or service not known"; then
-            echo "::notice::apt DNS failure detected; resolving apt hosts via DoH and pinning /etc/hosts (upstream DNS outage workaround)"
-            apt_hosts=$(grep -rhoE 'https?://[^/[:space:]"]+' /etc/apt/sources.list /etc/apt/sources.list.d/ /etc/apt/apt-mirrors.txt 2>/dev/null | sed -E 's|https?://||' | sort -u)
-            for h in $apt_hosts azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
-              getent hosts "$h" >/dev/null 2>&1 && continue
-              ip=$(curl -sf --max-time 10 "https://dns.google/resolve?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
-              if [ -z "$ip" ]; then
-                ip=$(curl -sf --max-time 10 -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
-              fi
-              [ -n "$ip" ] && { echo "$ip $h" | sudo tee -a /etc/hosts; echo "::notice::pinned $h -> $ip"; }
-            done
-            out=$(run_apt 2>&1); rc=$?
-          fi
-          printf '%s\n' "$out"
-          exit "$rc"
+      - name: Prepare git-crypt
+        timeout-minutes: 8
+        run: bash .github/scripts/prepare_git_crypt.sh
 
       - name: Unlock git-crypt
         id: unlock
@@ -72,7 +53,17 @@ jobs:
 
       - name: Install dependencies
         timeout-minutes: 7
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
+        env:
+          PIP_RETRIES: "5"
+        run: python -m pip install --disable-pip-version-check --no-index --find-links .github/vendor/wheels -r requirements.txt
+
+      - name: Verify vendored wheelhouse matches requirements
+        timeout-minutes: 5
+        # Online on purpose: a requirements.txt bump without refreshed wheels
+        # must fail here, on push, not inside a production run.
+        run: |
+          python -m pip download --disable-pip-version-check -q -r requirements.txt -d /tmp/w --no-deps
+          diff -r /tmp/w .github/vendor/wheels
 
       - name: Run tests
         id: tests
