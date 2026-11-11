@@ -1,9 +1,15 @@
-*.py filter=git-crypt diff=git-crypt
-*.json filter=git-crypt diff=git-crypt
-*.env filter=git-crypt diff=git-crypt
-*.txt filter=git-crypt diff=git-crypt
-data/** filter=git-crypt diff=git-crypt
-*~ filter=git-crypt diff=git-crypt
+* filter=git-crypt diff=git-crypt
 
-# The secret-redacting final reporter must still run when unlock itself fails.
+# GitHub must read the workflow before checkout can unlock the repository.
+# These control surfaces contain no account data or secrets. The log sender
+# must remain executable even when git-crypt unlock itself is the failed step.
+.gitattributes !filter !diff
+.github/workflows/*.yml !filter !diff
+.github/workflows/*.yaml !filter !diff
 .github/scripts/send_private_log.py !filter !diff
+
+# Public-facing surfaces: the root README and the screenshots it embeds must
+# stay plaintext so GitHub can render them. Anchored so nested READMEs (e.g.
+# data/reference/**) stay encrypted.
+/README.md !filter !diff
+docs/images/** !filter !diff
