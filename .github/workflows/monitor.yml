@@ -93,7 +93,25 @@ jobs:
         id: install_git_crypt
         if: steps.admission.outputs.should_run == 'true'
         timeout-minutes: 5
-        run: sudo apt-get install -y git-crypt
+        run: |
+          set +e
+          run_apt() { sudo apt-get install -y git-crypt; }
+          out=$(run_apt 2>&1); rc=$?
+          if [ $rc -ne 0 ] && printf '%s' "$out" | grep -qE "Temporary failure resolving|Could not resolve|Name or service not known"; then
+            echo "::notice::apt DNS failure detected; resolving apt hosts via DoH and pinning /etc/hosts (upstream DNS outage workaround)"
+            apt_hosts=$(grep -rhoE 'https?://[^/[:space:]"]+' /etc/apt/sources.list /etc/apt/sources.list.d/ /etc/apt/apt-mirrors.txt 2>/dev/null | sed -E 's|https?://||' | sort -u)
+            for h in $apt_hosts azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+              getent hosts "$h" >/dev/null 2>&1 && continue
+              ip=$(curl -sf --max-time 10 "https://dns.google/resolve?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
+              if [ -z "$ip" ]; then
+                ip=$(curl -sf --max-time 10 -H 'accept: application/dns-json' "https://cloudflare-dns.com/dns-query?name=$h&type=A" | python3 -c 'import json,sys; print(next((a["data"] for a in json.load(sys.stdin).get("Answer",[]) if a.get("type")==1), ""))' 2>/dev/null)
+              fi
+              [ -n "$ip" ] && { echo "$ip $h" | sudo tee -a /etc/hosts; echo "::notice::pinned $h -> $ip"; }
+            done
+            out=$(run_apt 2>&1); rc=$?
+          fi
+          printf '%s\n' "$out"
+          exit "$rc"
 
       - name: Unlock git-crypt
         id: unlock
