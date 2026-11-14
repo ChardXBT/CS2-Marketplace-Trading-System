@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # A requirements bump must be paired with refreshed .github/vendor/wheels;
+  # the wheelhouse check fails loudly until it is.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly

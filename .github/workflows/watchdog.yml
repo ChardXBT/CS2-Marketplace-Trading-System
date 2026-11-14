@@ -1,0 +1,67 @@
+name: Dispatch Watchdog
+
+# Hourly check that the external dispatcher (cron-job.org) is still starting
+# the main workflow. Scheduled workflows run from the default branch only.
+on:
+  schedule:
+    - cron: "8 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dispatch-watchdog
+  cancel-in-progress: false
+
+env:
+  WATCHED_WORKFLOW: monitor.yml
+  # Sized to this repository's dispatch cadence plus normal scheduling delay.
+  WATCHDOG_MAX_AGE_MINUTES: "45"
+  # "true" re-dispatches the watched workflow once when it is stale. Enabling it
+  # also requires raising the job's actions permission to write.
+  WATCHDOG_REDISPATCH: "false"
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check newest dispatched run
+        id: check
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          created_at="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$WATCHED_WORKFLOW/runs?per_page=1" --jq '.workflow_runs[0].created_at // empty')"
+          if [ -z "$created_at" ]; then
+            age_minutes=-1
+            summary="no $WATCHED_WORKFLOW run was found"
+          else
+            age_minutes=$(( ($(date -u +%s) - $(date -u -d "$created_at" +%s)) / 60 ))
+            summary="newest $WATCHED_WORKFLOW run is ${age_minutes} min old (limit ${WATCHDOG_MAX_AGE_MINUTES})"
+          fi
+          if [ "$age_minutes" -ge 0 ] && [ "$age_minutes" -le "$WATCHDOG_MAX_AGE_MINUTES" ]; then
+            echo "Dispatcher healthy: $summary."
+            exit 0
+          fi
+
+          if [ "$WATCHDOG_REDISPATCH" = "true" ]; then
+            default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
+            gh workflow run "$WATCHED_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$default_branch"
+            summary="$summary; re-dispatched once"
+          fi
+
+          if [ -z "$DISCORD_LOG_WEBHOOK_URL" ]; then
+            echo "::error title=Dispatcher stalled::$summary. No DISCORD_LOG_WEBHOOK_URL secret is configured for an alert."
+            exit 1
+          fi
+          payload="$(jq -cn --arg content "⏰ ${GITHUB_REPOSITORY} watchdog: ${summary}. ${RUN_URL}" '{content: $content, allowed_mentions: {parse: []}}')"
+          # The webhook URL goes through curl's stdin config, never argv or logs.
+          printf 'url = "%s"\n' "$DISCORD_LOG_WEBHOOK_URL" \
+            | curl -4 -sS -f --max-time 20 --retry 3 --config - \
+                -H 'Content-Type: application/json' -d "$payload" -o /dev/null
+          echo "::warning title=Dispatcher stalled::$summary. Alert sent to the private log channel."
