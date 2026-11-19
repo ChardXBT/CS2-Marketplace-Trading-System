@@ -173,6 +173,8 @@ jobs:
           CSFLOAT_API_KEY: ${{ secrets.CSFLOAT_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           LISTING_TIER: ${{ github.event.inputs.listing_tier || 'cycle' }}
+          # Repository variable; "0" switches the book-row file off (docs/ORDER_BOOK.md).
+          ORDER_BOOK_CAPTURE: ${{ vars.ORDER_BOOK_CAPTURE }}
         run: |
           echo "Running monitor. Detailed bot output is saved privately and sent to Discord."
           PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 exec python main.py >> "$RUNTIME_PRIVATE_LOG" 2>&1
