@@ -90,7 +90,7 @@ class RejectionReceiptBoundaryTests(unittest.TestCase):
         self.assertEqual(decision.decision, "hold")
         self.assertEqual(decision.receipt_ids, (receipt["receipt_id"],))
 
-    def test_primary_pr45_producer_receipts_are_schema_compatible(self):
+    def test_primary_producer_receipts_are_schema_compatible(self):
         confirmed = fixture("producer_confirmed_missing_sticker.json")
         manual = fixture("producer_manual_review_unknown.json")
         validate_receipt(confirmed, now=FIXED_NOW)
