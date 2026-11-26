@@ -1,0 +1,32 @@
+{
+  "schema": "souvenir_rejection_receipt/1",
+  "receipt_id": "3333333333333333333333333333333333333333333333333333333333333333",
+  "detected_at": "2026-11-26T00:00:00Z",
+  "account": "anonymous-account",
+  "provider": "csfloat",
+  "steam_offer_id": "9300000000000000001",
+  "steam_trade_id": null,
+  "marketplace_trade_id": "9300000000000000003",
+  "contract_id": "9300000000000000004",
+  "transaction_id": null,
+  "buy_order_id": "9300000000000000006",
+  "order_target": {
+    "marketplace": "csfloat",
+    "account": "anonymous-account",
+    "target_key": null,
+    "expression_sha256": null
+  },
+  "asset_id": "9300000000000000007",
+  "market_hash_name": "Anonymous Souvenir Fixture (Factory New)",
+  "expected_evidence": {
+    "source": "anonymous-order-expression",
+    "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "actual_evidence": {
+    "source": "missing-inspect-data",
+    "digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "verdict": "manual_review",
+  "mismatch": "none",
+  "hold": null
+}

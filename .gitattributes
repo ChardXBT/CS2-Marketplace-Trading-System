@@ -22,3 +22,11 @@ requirements.txt !filter !diff
 # data/reference/**) stay encrypted.
 /README.md !filter !diff
 docs/images/** !filter !diff
+
+# Public, strategy-free rejection-receipt consumer contract and tests. These
+# files contain anonymous fixtures only and must remain reviewable on GitHub.
+/docs/REJECTION_RECEIPTS.md !filter !diff
+/src/rejection_receipts/** !filter !diff
+/tests/test_rejection_receipts.py !filter !diff
+/tests/fixtures/rejection_receipts/** !filter !diff
+/tools/rejection_receipt_dry_run.py !filter !diff
