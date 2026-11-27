@@ -225,6 +225,23 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         receipt["artifacts"] = [dict(receipt["artifacts"][0], kind="private_debug_blob")]
         self.assert_invalid(receipt, "unknown_artifact_kind")
 
+    def test_unhashable_wrong_types_fail_closed_without_crashing(self):
+        receipt = complete_receipt()
+        receipt["scan"]["status"] = ["complete"]
+        self.assert_invalid(receipt, "invalid_scan_status")
+
+        receipt = complete_receipt()
+        receipt["scan"]["status"] = {"value": "complete"}
+        self.assert_invalid(receipt, "invalid_scan_status")
+
+        receipt = complete_receipt()
+        receipt["artifacts"][0]["kind"] = ["order_book_jsonl_gz"]
+        self.assert_invalid(receipt, "unknown_artifact_kind")
+
+        receipt = complete_receipt()
+        receipt["artifacts"][0]["kind"] = {"value": "order_book_jsonl_gz"}
+        self.assert_invalid(receipt, "unknown_artifact_kind")
+
     def test_order_book_date_directory_must_be_a_real_date(self):
         receipt = complete_receipt()
         for artifact in receipt["artifacts"]:

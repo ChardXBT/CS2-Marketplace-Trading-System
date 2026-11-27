@@ -172,7 +172,7 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
     scan = receipt.get("scan")
     if _check_object(scan, SCAN_FIELDS, "$.scan", errors):
         status = scan.get("status")
-        if status not in {"complete", "partial"}:
+        if not isinstance(status, str) or status not in {"complete", "partial"}:
             _error(errors, "invalid_scan_status", "$.scan.status", "must be complete or partial")
         _check_nonnegative_int(scan.get("pages_completed"), "$.scan.pages_completed", errors)
         _check_nonnegative_int(scan.get("rows_observed"), "$.scan.rows_observed", errors)
@@ -274,7 +274,7 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
             if not _check_object(artifact, ARTIFACT_FIELDS, path_prefix, errors):
                 continue
             kind = artifact.get("kind")
-            if kind not in ARTIFACT_VERSIONS:
+            if not isinstance(kind, str) or kind not in ARTIFACT_VERSIONS:
                 _error(errors, "unknown_artifact_kind", f"{path_prefix}.kind", "must be a public artifact kind")
                 continue
             if kind in seen_kinds:
