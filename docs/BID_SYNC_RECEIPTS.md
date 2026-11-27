@@ -147,7 +147,7 @@ Consumers evaluate receipts as an append-only stream:
 3. The same `(run_id, attempt)` with any payload difference is a conflicting duplicate. The conflict fails closed and the later payload is not accepted.
 4. A different attempt is a different run even when `run_id` is the same.
 5. `schema_version` other than `bid-sync-receipt/1` is `unsupported_schema_version`. A consumer must not inspect unknown-version fields, infer meaning from them, or treat the receipt as partial evidence.
-6. Invalid JSON, missing fields, nulls in required typed positions, booleans in integer positions, negative values, values above the JSON safe integer limit, unexpected fields, duplicate artifact paths, mismatched artifact identities and non-UTC timestamps all fail closed.
+6. Invalid JSON, duplicate JSON object keys, missing fields, nulls in required typed positions, booleans in integer positions, negative values, values above the JSON safe integer limit, unexpected fields, duplicate artifact paths, mismatched artifact identities and non-UTC timestamps all fail closed.
 
 Canonical comparison for exact duplicates uses JSON object keys sorted
 recursively, UTF-8, no insignificant whitespace, and the shortest non-ASCII
@@ -179,7 +179,7 @@ The synthetic fixture matrix covers:
 - exact duplicate run receipt as idempotent;
 - conflicting duplicate run receipt as fail-closed;
 - unknown receipt version as fail-closed;
-- empty artifact lists, missing and null fields, wrong types, zero, negative and huge integers, unicode and empty identity strings, out-of-order duplicate ingestion, timezone offsets, artifact path/run mismatch, duplicate artifact paths, uppercase digests, and closed-schema extra fields.
+- empty artifact lists, malformed and deeply nested JSON, duplicate JSON object keys, missing and null fields, wrong types, zero, negative and huge integers, unicode and empty identity strings, out-of-order duplicate ingestion, timezone offsets, artifact path/run mismatch, duplicate artifact paths, uppercase digests, and closed-schema extra fields.
 
 ## Remaining public-schema gap and falsifiable next experiment
 

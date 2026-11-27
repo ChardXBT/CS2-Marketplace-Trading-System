@@ -354,6 +354,23 @@ class BidSyncReceiptContractCliTests(unittest.TestCase):
                 self.assertEqual(summary["error_count"], 1)
                 self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
 
+    def test_duplicate_json_object_keys_fail_closed(self):
+        receipt_text = (FIXTURE_DIR / "complete_scan.json").read_text(encoding="utf-8")
+        receipt_text = receipt_text.replace(
+            '"schema_version": "bid-sync-receipt/1",',
+            '"schema_version": "bid-sync-receipt/99",\n  "schema_version": "bid-sync-receipt/1",',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            duplicate_key = Path(temp_dir) / "duplicate-key.json"
+            duplicate_key.write_text(receipt_text, encoding="utf-8")
+            completed = self.run_cli(duplicate_key)
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["unreadable_count"], 1)
+            self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
+
 
 if __name__ == "__main__":
     unittest.main()
