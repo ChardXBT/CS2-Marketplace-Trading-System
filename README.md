@@ -342,7 +342,7 @@ A process launch or a single log message is not treated as proof of successful w
 
 ## Technology
 
-- **Python 3.13+** for orchestration, state transitions, data validation, APIs, and testing
+- **Python 3.12+** for orchestration, state transitions, data validation, APIs, and testing
 - **Node.js / Playwright** for browser automation and marketplace interaction
 - **REST APIs** for orders, listings, pricing, and inventory
 - **GitHub Actions** for scheduled execution and CI/CD
