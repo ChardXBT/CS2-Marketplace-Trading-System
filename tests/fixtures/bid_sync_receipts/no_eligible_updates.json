@@ -1,0 +1,30 @@
+{
+  "schema_version": "bid-sync-receipt/1",
+  "receipt_id": "bid-sync-4242424244-1",
+  "run": {
+    "repository": "ChardXBT/CS2-Marketplace-Trading-System",
+    "workflow": "CSFloat Hourly Monitor",
+    "run_id": "4242424244",
+    "attempt": 1,
+    "started_at": "2026-01-02T05:04:05Z",
+    "completed_at": "2026-01-02T05:07:05Z"
+  },
+  "scan": {
+    "status": "complete",
+    "pages_completed": 2,
+    "terminal_page_complete": true,
+    "rows_observed": 17,
+    "incomplete_reason": null
+  },
+  "updates": {
+    "candidates_observed": 4,
+    "eligible_updates": 0,
+    "no_eligible_updates": true
+  },
+  "artifact_versions": {
+    "order_book_jsonl_gz": "order-book-jsonl/1",
+    "active_bid_prices_json": "active-bid-prices-json/1",
+    "active_bid_prices_csv": "active-bid-prices-csv/1"
+  },
+  "artifacts": []
+}

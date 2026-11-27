@@ -22,3 +22,12 @@ requirements.txt !filter !diff
 # data/reference/**) stay encrypted.
 /README.md !filter !diff
 docs/images/** !filter !diff
+
+# Public, strategy-free bid-sync receipt compatibility contract and tests.
+# These files contain anonymous fixtures and metadata-only schemas; they must
+# remain reviewable on GitHub.
+/docs/BID_SYNC_RECEIPTS.md !filter !diff
+/src/bid_sync_receipts/** !filter !diff
+/tests/test_bid_sync_receipts.py !filter !diff
+/tests/fixtures/bid_sync_receipts/** !filter !diff
+/tools/bid_sync_receipt_contract.py !filter !diff
