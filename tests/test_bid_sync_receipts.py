@@ -393,6 +393,18 @@ class BidSyncReceiptContractCliTests(unittest.TestCase):
             self.assertEqual(summary["unreadable_count"] + summary["invalid_count"], 1)
             self.assertIn(summary["errors"][0]["code"], {"unreadable_receipt", "invalid_type"})
 
+    def test_huge_json_integer_tokens_fail_closed_without_traceback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            huge_integer = Path(temp_dir) / "huge-integer.json"
+            huge_integer.write_text('{"value":' + "1" * 5000 + "}", encoding="utf-8")
+            completed = self.run_cli(huge_integer)
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["unreadable_count"], 1)
+            self.assertEqual(summary["error_count"], 1)
+            self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
+
     def test_duplicate_json_object_keys_fail_closed(self):
         receipt_text = (FIXTURE_DIR / "complete_scan.json").read_text(encoding="utf-8")
         receipt_text = receipt_text.replace(

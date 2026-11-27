@@ -15,11 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.bid_sync_receipts.contract import (
-    DuplicateObjectKeyError,
-    ingest_receipts,
-    loads_receipt_json,
-)
+from src.bid_sync_receipts.contract import ingest_receipts, loads_receipt_json
 
 
 def main() -> int:
@@ -32,7 +28,7 @@ def main() -> int:
     for index, path in enumerate(args.receipts):
         try:
             receipt = loads_receipt_json(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, DuplicateObjectKeyError, RecursionError) as exc:
+        except (OSError, ValueError, RecursionError) as exc:
             errors.append(
                 {
                     "index": index,
