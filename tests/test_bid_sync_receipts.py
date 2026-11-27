@@ -273,6 +273,12 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         receipt["scan"]["incomplete_reason"] = "x" * 4097
         self.assert_invalid(receipt, "out_of_range")
 
+    def test_incomplete_reason_rejects_all_unicode_control_characters(self):
+        for control in ("\x00", "\x1f", "\x7f", "\x85", "\u009f"):
+            receipt = load_fixture("partial_page.json")
+            receipt["scan"]["incomplete_reason"] = f"partial{control}page"
+            self.assert_invalid(receipt, "control_character")
+
     def test_null_and_nonobject_receipts_fail_closed(self):
         for value in (None, [], "bid-sync-receipt/1", 0):
             self.assert_invalid(value, "invalid_type")

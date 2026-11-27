@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from datetime import datetime
 from typing import Any, Iterable
 
@@ -192,7 +193,7 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
                     "$.scan.incomplete_reason",
                     f"must be at most {MAX_INCOMPLETE_REASON_CHARS} characters",
                 )
-            elif any(ord(char) < 0x20 for char in incomplete_reason):
+            elif any(unicodedata.category(char) == "Cc" for char in incomplete_reason):
                 _error(errors, "control_character", "$.scan.incomplete_reason", "must not contain control characters")
         if status == "complete":
             if terminal_page_complete is not True or incomplete_reason is not None:
