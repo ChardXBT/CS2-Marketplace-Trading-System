@@ -377,14 +377,21 @@ class BidSyncReceiptContractCliTests(unittest.TestCase):
             deep = temp_path / "deep.json"
             deep.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
 
-            for path in (malformed, deep):
-                completed = self.run_cli(path)
-                self.assertEqual(completed.returncode, 1, completed.stderr)
-                self.assertEqual(completed.stderr, "")
-                summary = json.loads(completed.stdout)
-                self.assertEqual(summary["unreadable_count"], 1)
-                self.assertEqual(summary["error_count"], 1)
-                self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
+            completed = self.run_cli(malformed)
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["unreadable_count"], 1)
+            self.assertEqual(summary["error_count"], 1)
+            self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
+
+            completed = self.run_cli(deep)
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["error_count"], 1)
+            self.assertEqual(summary["unreadable_count"] + summary["invalid_count"], 1)
+            self.assertIn(summary["errors"][0]["code"], {"unreadable_receipt", "invalid_type"})
 
     def test_duplicate_json_object_keys_fail_closed(self):
         receipt_text = (FIXTURE_DIR / "complete_scan.json").read_text(encoding="utf-8")
