@@ -156,8 +156,9 @@ compare a hash of the canonical form.
 
 ## Reference verification
 
-The reference implementation is `src/bid_sync_receipts/contract.py`. The
-read-only operator entry point is:
+The reference implementation is `src/bid_sync_receipts/contract.py`; its
+`loads_receipt_json` helper rejects duplicate JSON object keys while parsing.
+The read-only operator entry point is:
 
 ```bash
 python tools/bid_sync_receipt_contract.py \

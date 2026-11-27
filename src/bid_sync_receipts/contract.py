@@ -54,6 +54,23 @@ UTC_TIMESTAMP_RE = re.compile(
 )
 
 
+class DuplicateObjectKeyError(ValueError):
+    pass
+
+
+def _reject_duplicate_object_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateObjectKeyError(f"duplicate object key: {key}")
+        result[key] = value
+    return result
+
+
+def loads_receipt_json(text: str) -> Any:
+    return json.loads(text, object_pairs_hook=_reject_duplicate_object_keys)
+
+
 def _error(errors: list[dict[str, str]], code: str, path: str, message: str) -> None:
     errors.append({"code": code, "path": path, "message": message})
 

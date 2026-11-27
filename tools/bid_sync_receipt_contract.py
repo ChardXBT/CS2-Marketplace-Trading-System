@@ -15,20 +15,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.bid_sync_receipts.contract import ingest_receipts
-
-
-class DuplicateObjectKeyError(ValueError):
-    pass
-
-
-def _reject_duplicate_object_keys(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise DuplicateObjectKeyError(f"duplicate object key: {key}")
-        result[key] = value
-    return result
+from src.bid_sync_receipts.contract import (
+    DuplicateObjectKeyError,
+    ingest_receipts,
+    loads_receipt_json,
+)
 
 
 def main() -> int:
@@ -40,9 +31,7 @@ def main() -> int:
     errors = []
     for index, path in enumerate(args.receipts):
         try:
-            receipt = json.loads(
-                path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_object_keys
-            )
+            receipt = loads_receipt_json(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, DuplicateObjectKeyError, RecursionError) as exc:
             errors.append(
                 {
