@@ -62,7 +62,7 @@ def _reject_duplicate_object_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any
     result = {}
     for key, value in pairs:
         if key in result:
-            raise DuplicateObjectKeyError(f"duplicate object key: {key}")
+            raise DuplicateObjectKeyError("duplicate object key")
         result[key] = value
     return result
 
