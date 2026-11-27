@@ -30,10 +30,19 @@ def extract_workflow_python_versions(text):
 
 def extract_readme_python_requirement(text):
     """Return the major.minor requirement in the README Technology section."""
-    match = re.search(r"- \*\*Python (\d+)\.(\d+)\+\*\*", text)
-    if match is None:
-        return None
-    return f"{match.group(1)}.{match.group(2)}"
+    in_technology = False
+    for line in text.splitlines():
+        if re.match(r"^##\s+Technology\s*$", line):
+            in_technology = True
+            continue
+        if in_technology and re.match(r"^##\s", line):
+            break
+        if not in_technology:
+            continue
+        match = re.search(r"- \*\*Python (\d+)\.(\d+)\+\*\*", line)
+        if match is not None:
+            return f"{match.group(1)}.{match.group(2)}"
+    return None
 
 
 def repository_workflow_python_versions():
@@ -82,8 +91,27 @@ class PythonVersionDocumentationTests(unittest.TestCase):
         self.assertIsNone(extract_readme_python_requirement(""))
         self.assertIsNone(extract_readme_python_requirement("Python 3.12+"))
         self.assertEqual(
-            extract_readme_python_requirement("- **Python 3.12+** for testing"),
+            extract_readme_python_requirement(
+                "## Technology\n\n- **Python 3.12+** for testing"
+            ),
             "3.12",
+        )
+
+    def test_readme_parser_scopes_requirement_to_technology_section(self):
+        self.assertEqual(
+            extract_readme_python_requirement(
+                "- **Python 3.12+** outside the section\n\n"
+                "## Technology\n\n"
+                "- **Python 3.13+** inside the section"
+            ),
+            "3.13",
+        )
+        self.assertIsNone(
+            extract_readme_python_requirement(
+                "- **Python 3.12+** outside the section\n\n"
+                "## Repository layout\n\n"
+                "No requirement here"
+            )
         )
 
 
