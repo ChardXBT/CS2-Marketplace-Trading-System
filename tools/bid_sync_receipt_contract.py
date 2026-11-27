@@ -28,7 +28,7 @@ def main() -> int:
     for index, path in enumerate(args.receipts):
         try:
             receipt = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
             errors.append(
                 {
                     "index": index,

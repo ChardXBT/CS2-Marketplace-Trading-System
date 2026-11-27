@@ -166,7 +166,7 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
             _error(errors, "invalid_time_order", "$.run.completed_at", "must not be before started_at")
 
     if receipt_id_parts is not None and run_id is not None and attempt is not None:
-        if receipt_id_parts.group(1) != run_id or int(receipt_id_parts.group(2)) != attempt:
+        if receipt_id_parts.group(1) != run_id or receipt_id_parts.group(2) != str(attempt):
             _error(errors, "receipt_id_mismatch", "$.receipt_id", "must exactly encode run_id and attempt")
 
     scan = receipt.get("scan")
@@ -318,7 +318,7 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
                                 "order-book date directory must be a valid calendar date",
                             )
                     if match and run_id is not None and attempt is not None and (
-                        match.group(4) != run_id or int(match.group(5)) != attempt
+                        match.group(4) != run_id or match.group(5) != str(attempt)
                     ):
                         _error(
                             errors,

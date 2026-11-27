@@ -1,5 +1,8 @@
 import copy
 import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +13,7 @@ from src.bid_sync_receipts.contract import (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "bid_sync_receipts"
 
 
@@ -242,6 +246,19 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         receipt["artifacts"][0]["kind"] = {"value": "order_book_jsonl_gz"}
         self.assert_invalid(receipt, "unknown_artifact_kind")
 
+    def test_huge_digit_run_attempts_fail_closed_without_crashing(self):
+        huge_attempt = "9" * 5000
+
+        receipt = complete_receipt()
+        receipt["receipt_id"] = f"bid-sync-4242424242-{huge_attempt}"
+        self.assert_invalid(receipt, "receipt_id_mismatch")
+
+        receipt = complete_receipt()
+        for artifact in receipt["artifacts"]:
+            if artifact["kind"] == "order_book_jsonl_gz":
+                artifact["path"] = artifact["path"].replace("-1.jsonl.gz", f"-{huge_attempt}.jsonl.gz")
+        self.assert_invalid(receipt, "artifact_run_mismatch")
+
     def test_order_book_date_directory_must_be_a_real_date(self):
         receipt = complete_receipt()
         for artifact in receipt["artifacts"]:
@@ -307,6 +324,35 @@ class BidSyncReceiptContractTests(unittest.TestCase):
             "souvenir",
         ):
             self.assertIn(required, doc)
+
+
+class BidSyncReceiptContractCliTests(unittest.TestCase):
+    def run_cli(self, *paths):
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "tools" / "bid_sync_receipt_contract.py"), *map(str, paths)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    def test_malformed_and_deeply_nested_json_fail_closed_without_traceback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            malformed = temp_path / "malformed.json"
+            malformed.write_text("{bad json", encoding="utf-8")
+            depth = 2000
+            deep = temp_path / "deep.json"
+            deep.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+
+            for path in (malformed, deep):
+                completed = self.run_cli(path)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertEqual(completed.stderr, "")
+                summary = json.loads(completed.stdout)
+                self.assertEqual(summary["unreadable_count"], 1)
+                self.assertEqual(summary["error_count"], 1)
+                self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
 
 
 if __name__ == "__main__":
