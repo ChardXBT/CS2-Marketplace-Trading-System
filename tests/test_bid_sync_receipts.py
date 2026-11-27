@@ -371,6 +371,22 @@ class BidSyncReceiptContractCliTests(unittest.TestCase):
             self.assertEqual(summary["unreadable_count"], 1)
             self.assertEqual(summary["errors"][0]["code"], "unreadable_receipt")
 
+    def test_partial_input_failure_preserves_original_indexes_and_valid_receipts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            malformed = Path(temp_dir) / "malformed.json"
+            malformed.write_text("{bad json", encoding="utf-8")
+            completed = self.run_cli(
+                malformed,
+                FIXTURE_DIR / "unknown_version.json",
+                FIXTURE_DIR / "complete_scan.json",
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            summary = json.loads(completed.stdout)
+            self.assertEqual(summary["valid_count"], 1)
+            self.assertEqual(summary["invalid_count"], 1)
+            self.assertEqual(summary["unreadable_count"], 1)
+            self.assertEqual([error["index"] for error in summary["errors"]], [0, 1])
+
 
 if __name__ == "__main__":
     unittest.main()
