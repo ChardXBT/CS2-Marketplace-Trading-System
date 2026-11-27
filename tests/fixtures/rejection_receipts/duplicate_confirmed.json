@@ -1,0 +1,38 @@
+{
+  "schema": "souvenir_rejection_receipt/1",
+  "receipt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+  "detected_at": "2026-11-26T00:00:00Z",
+  "account": "anonymous-account",
+  "provider": "csfloat",
+  "steam_offer_id": "9100000000000000001",
+  "steam_trade_id": "9100000000000000002",
+  "marketplace_trade_id": "9100000000000000003",
+  "contract_id": "9100000000000000004",
+  "transaction_id": "9100000000000000005",
+  "buy_order_id": "9100000000000000006",
+  "order_target": {
+    "marketplace": "csfloat",
+    "account": "anonymous-account",
+    "target_key": "anonymous-target-a",
+    "expression_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "asset_id": "9100000000000000007",
+  "market_hash_name": "Anonymous Souvenir Fixture (Factory New)",
+  "expected_evidence": {
+    "source": "anonymous-order-expression",
+    "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "actual_evidence": {
+    "source": "anonymous-inspect-decode",
+    "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "verdict": "confirmed_mismatch",
+  "mismatch": "missing_sticker",
+  "hold": {
+    "type": "synthetic_recreate_hold",
+    "duration_hours": 72,
+    "expires_at": "2026-11-29T00:00:00Z",
+    "scope": "order_target_only",
+    "state": "proposed_not_live"
+  }
+}
