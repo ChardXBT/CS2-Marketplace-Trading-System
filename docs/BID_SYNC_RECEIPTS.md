@@ -62,7 +62,7 @@ Required fields, with no additional fields:
 - `repository`: exactly `ChardXBT/CS2-Marketplace-Trading-System`.
 - `workflow`: exactly `CSFloat Hourly Monitor`.
 - `run_id`: the decimal GitHub Actions run ID as a string, positive, no leading zero, at most 20 digits.
-- `attempt`: positive JSON integer. Booleans are not integers.
+- `attempt`: positive JSON integer no greater than `2^53 - 1`. Booleans are not integers.
 - `started_at` and `completed_at`: RFC3339 UTC timestamps with seconds and a literal `Z`, for example `2026-01-02T03:04:05Z`. Offsets and fractional/local forms are outside v1. `completed_at` must not precede `started_at`.
 
 `receipt_id` must exactly be `bid-sync-<run_id>-<attempt>`. Consumers key

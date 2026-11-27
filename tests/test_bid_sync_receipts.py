@@ -61,6 +61,17 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         )
         self.assertFalse(result["scan_complete"])
 
+    def test_unknown_version_does_not_inspect_unknown_version_fields(self):
+        receipt = load_fixture("unknown_version.json")
+        receipt["unexpected_v99_field"] = {"anything": ["goes"]}
+        del receipt["scan"]
+        result = validate_receipt(receipt)
+        self.assertFalse(result["valid"])
+        self.assertEqual(
+            {error["code"] for error in result["errors"]},
+            {"unsupported_schema_version"},
+        )
+
     def test_exact_duplicate_run_id_is_idempotent(self):
         receipt = complete_receipt()
         summary = ingest_receipts([receipt, copy.deepcopy(receipt)])
@@ -163,6 +174,21 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         codes = {error["code"] for error in result["errors"]}
         self.assertIn("invalid_type", codes)
         self.assertIn("out_of_range", codes)
+
+    def test_zero_and_json_safe_integer_boundaries_are_accepted(self):
+        receipt = load_fixture("no_eligible_updates.json")
+        receipt["scan"]["pages_completed"] = 0
+        receipt["scan"]["rows_observed"] = 0
+        receipt["updates"]["candidates_observed"] = 0
+        self.assertTrue(validate_receipt(receipt)["valid"])
+
+        receipt = complete_receipt()
+        receipt["scan"]["pages_completed"] = 2**53 - 1
+        receipt["scan"]["rows_observed"] = 2**53 - 1
+        receipt["updates"]["candidates_observed"] = 2**53 - 1
+        receipt["updates"]["eligible_updates"] = 2**53 - 1
+        receipt["artifacts"][0]["bytes"] = 2**53 - 1
+        self.assertTrue(validate_receipt(receipt)["valid"])
 
     def test_receipt_identity_rejects_empty_unicode_and_mismatched_values(self):
         receipt = complete_receipt()

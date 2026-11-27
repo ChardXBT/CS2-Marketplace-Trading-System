@@ -142,8 +142,6 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
         _error(errors, "invalid_type", "$", "receipt must be an object")
         return result
 
-    _check_object(receipt, TOP_LEVEL_FIELDS, "$", errors)
-
     schema_version = receipt.get("schema_version")
     if schema_version != SCHEMA_VERSION:
         _error(
@@ -153,6 +151,8 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
             f"must be {SCHEMA_VERSION}",
         )
         return result
+
+    _check_object(receipt, TOP_LEVEL_FIELDS, "$", errors)
 
     receipt_id = receipt.get("receipt_id")
     receipt_id_parts = None
