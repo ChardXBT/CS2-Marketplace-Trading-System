@@ -26,5 +26,18 @@
     "active_bid_prices_json": "active-bid-prices-json/1",
     "active_bid_prices_csv": "active-bid-prices-csv/1"
   },
-  "artifacts": []
+  "artifacts": [
+    {
+      "kind": "active_bid_prices_json",
+      "path": "data/active_bid_prices.json",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "bytes": 4321
+    },
+    {
+      "kind": "active_bid_prices_csv",
+      "path": "data/active_bid_prices.csv",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "bytes": 2345
+    }
+  ]
 }

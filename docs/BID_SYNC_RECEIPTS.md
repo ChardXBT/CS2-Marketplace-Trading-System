@@ -117,7 +117,12 @@ for a v1 consumer.
 
 ### `artifacts`
 
-Required array. It may be empty. Each entry is a closed object with exactly:
+Required array. It may be empty only for partial-scan evidence. A complete
+sync must describe at least the two fixed snapshot outputs,
+`active_bid_prices_json` and `active_bid_prices_csv`; a receipt without those
+output descriptors is not proof of a successful sync, even when there were no
+eligible updates. The order-book capture remains optional because the producer
+has an owner-controlled capture switch. Each entry is a closed object with exactly:
 
 - `kind`: one of `order_book_jsonl_gz`, `active_bid_prices_json`, or `active_bid_prices_csv`.
 - `path`: repository-relative POSIX path.
@@ -147,7 +152,7 @@ Consumers evaluate receipts as an append-only stream:
 3. The same `(run_id, attempt)` with any payload difference is a conflicting duplicate. The conflict fails closed and the later payload is not accepted.
 4. A different attempt is a different run even when `run_id` is the same.
 5. `schema_version` other than `bid-sync-receipt/1` is `unsupported_schema_version`. A consumer must not inspect unknown-version fields, infer meaning from them, or treat the receipt as partial evidence.
-6. Invalid JSON, duplicate JSON object keys, missing fields, nulls in required typed positions, booleans in integer positions, negative values, values above the JSON safe integer limit, unexpected fields, duplicate artifact paths, mismatched artifact identities and non-UTC timestamps all fail closed.
+6. Invalid JSON, duplicate JSON object keys, missing fields, nulls in required typed positions, booleans in integer positions, negative values, values above the JSON safe integer limit, unexpected fields, duplicate artifact paths, mismatched artifact identities, missing complete-scan output descriptors and non-UTC timestamps all fail closed.
 
 Canonical comparison for exact duplicates uses JSON object keys sorted
 recursively, UTF-8, no insignificant whitespace, and the shortest non-ASCII
@@ -180,7 +185,40 @@ The synthetic fixture matrix covers:
 - exact duplicate run receipt as idempotent;
 - conflicting duplicate run receipt as fail-closed;
 - unknown receipt version as fail-closed;
-- empty artifact lists, malformed and deeply nested JSON, duplicate JSON object keys, missing and null fields, wrong types, zero, negative and huge integers, unicode and empty identity strings, out-of-order duplicate ingestion, timezone offsets, artifact path/run mismatch, duplicate artifact paths, uppercase digests, and closed-schema extra fields.
+- empty artifact lists on partial evidence, missing output descriptors on complete evidence, malformed and deeply nested JSON, duplicate JSON object keys, missing and null fields, wrong types, zero, negative and huge integers, unicode and empty identity strings, out-of-order duplicate ingestion, timezone offsets, artifact path/run mismatch, duplicate artifact paths, uppercase digests, and closed-schema extra fields.
+
+
+## Offline workflow-run evidence validation
+
+`src/bid_sync_receipts/workflow_evidence.py` provides a second pure validation
+layer for archived or mocked GitHub Actions responses. It does not call the
+GitHub API. It accepts a workflow-run object, the corresponding jobs response,
+and a `bid-sync-receipt/1` receipt, then fails closed unless all of the
+following agree:
+
+- the run is `CSFloat Hourly Monitor`, completed successfully, and has the
+  same run ID and retry attempt as the receipt;
+- exactly one job belongs to that run and completed successfully;
+- the job has executed steps, so a zero-step runner provisioning or billing
+  failure can never be read as a successful sync;
+- `Run the monitor script` and `Checkpoint runtime changes` are both present,
+  ordered, completed and successful, with positive increasing step numbers and
+  internally ordered UTC timestamp evidence inside the job lifetime;
+- the receipt is valid complete-scan evidence with the required snapshot
+  output descriptors, and its run timestamps are inside the Actions job
+  lifetime.
+
+A green top-level workflow conclusion by itself is not accepted as proof of a
+sync. Retried runs are valid only when the receipt attempt matches the Actions
+`run_attempt`. Missing, duplicate, cancelled, timed-out, skipped, failed or
+mismatched evidence fails closed. The read-only operator entry point is:
+
+```bash
+python tools/bid_sync_workflow_evidence.py run.json jobs.json receipt.json
+```
+
+All three files must be local, already-retrieved JSON. The command writes
+nothing and performs no network access.
 
 ## Remaining public-schema gap and falsifiable next experiment
 

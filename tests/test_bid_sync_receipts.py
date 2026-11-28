@@ -55,6 +55,25 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         self.assertEqual(result["eligible_updates"], 0)
         self.assertTrue(result["no_eligible_updates"])
 
+    def test_complete_scan_cannot_claim_success_without_snapshot_artifacts(self):
+        receipt = complete_receipt()
+        receipt["artifacts"] = []
+        self.assert_invalid(receipt, "missing_required_artifact")
+
+        for missing_kind in ("active_bid_prices_json", "active_bid_prices_csv"):
+            receipt = complete_receipt()
+            receipt["artifacts"] = [
+                artifact for artifact in receipt["artifacts"] if artifact["kind"] != missing_kind
+            ]
+            self.assert_invalid(receipt, "missing_required_artifact")
+
+    def test_partial_scan_may_have_empty_artifacts_but_is_not_complete(self):
+        receipt = load_fixture("partial_page.json")
+        receipt["artifacts"] = []
+        result = validate_receipt(receipt)
+        self.assertTrue(result["valid"], result["errors"])
+        self.assertFalse(result["scan_complete"])
+
     def test_unknown_version_fails_closed(self):
         result = self.assert_invalid(
             load_fixture("unknown_version.json"), "unsupported_schema_version"
@@ -216,10 +235,8 @@ class BidSyncReceiptContractTests(unittest.TestCase):
         self.assertIn("invalid_sha256", codes)
         self.assertIn("out_of_range", codes)
 
-    def test_artifacts_may_be_empty_but_must_be_an_array(self):
+    def test_artifacts_must_be_an_array(self):
         receipt = complete_receipt()
-        receipt["artifacts"] = []
-        self.assertTrue(validate_receipt(receipt)["valid"])
         receipt["artifacts"] = None
         self.assert_invalid(receipt, "invalid_type")
 
