@@ -8,6 +8,8 @@ and expected output descriptors are also present.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any
 
 from src.bid_sync_receipts.contract import WORKFLOW, validate_receipt
@@ -16,6 +18,9 @@ MONITOR_STEP_NAME = "Run the monitor script"
 CHECKPOINT_STEP_NAME = "Checkpoint runtime changes"
 REQUIRED_STEP_NAMES = (MONITOR_STEP_NAME, CHECKPOINT_STEP_NAME)
 MAX_JSON_SAFE_INTEGER = 2**53 - 1
+UTC_TIMESTAMP_RE = re.compile(
+    r"^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})Z$"
+)
 
 
 def _error(errors: list[dict[str, str]], code: str, path: str, message: str) -> None:
@@ -28,6 +33,20 @@ def _positive_int(value: Any) -> bool:
 
 def _nonnegative_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_JSON_SAFE_INTEGER
+
+
+def _parse_utc_timestamp(value: Any, path: str, errors: list[dict[str, str]]) -> datetime | None:
+    if value is None:
+        _error(errors, "missing_timestamp", path, "timestamp evidence is required")
+        return None
+    if not isinstance(value, str) or not UTC_TIMESTAMP_RE.fullmatch(value):
+        _error(errors, "timestamp_must_be_utc", path, "must use RFC3339 UTC seconds ending in Z")
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        _error(errors, "invalid_timestamp", path, "must be a valid calendar timestamp")
+        return None
 
 
 def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -> dict[str, Any]:
@@ -86,6 +105,11 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         _error(errors, "run_not_successful", "$.run", "run must be completed with conclusion success")
 
+    run_created_at = _parse_utc_timestamp(run.get("created_at"), "$.run.created_at", errors)
+    run_updated_at = _parse_utc_timestamp(run.get("updated_at"), "$.run.updated_at", errors)
+    if run_created_at is not None and run_updated_at is not None and run_updated_at < run_created_at:
+        _error(errors, "invalid_time_order", "$.run.updated_at", "must not be before created_at")
+
     if isinstance(receipt, dict) and isinstance(receipt.get("run"), dict):
         receipt_run = receipt["run"]
         if run_id is not None and receipt_run.get("run_id") != run_id:
@@ -133,6 +157,20 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
     if job.get("status") != "completed" or job.get("conclusion") != "success":
         _error(errors, "job_not_successful", "$.jobs.jobs[0]", "job must be completed with conclusion success")
 
+    job_started_at = _parse_utc_timestamp(job.get("started_at"), "$.jobs.jobs[0].started_at", errors)
+    job_completed_at = _parse_utc_timestamp(job.get("completed_at"), "$.jobs.jobs[0].completed_at", errors)
+    if job_started_at is not None and job_completed_at is not None and job_completed_at < job_started_at:
+        _error(errors, "invalid_time_order", "$.jobs.jobs[0].completed_at", "must not be before started_at")
+    if run_created_at is not None and job_started_at is not None and job_started_at < run_created_at:
+        _error(errors, "job_time_mismatch", "$.jobs.jobs[0].started_at", "job cannot start before its run is created")
+    if run_updated_at is not None and job_completed_at is not None and job_completed_at > run_updated_at:
+        _error(
+            errors,
+            "job_time_mismatch",
+            "$.jobs.jobs[0].completed_at",
+            "job cannot complete after its run was last updated",
+        )
+
     steps = job.get("steps")
     if not isinstance(steps, list):
         _error(errors, "invalid_type", "$.jobs.jobs[0].steps", "steps must be an array")
@@ -148,12 +186,31 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
             )
     else:
         seen_names: set[str] = set()
+        seen_numbers: set[int] = set()
         positions: dict[str, int] = {}
+        previous_step_number = None
         for index, step in enumerate(steps):
             path = f"$.jobs.jobs[0].steps[{index}]"
             if not isinstance(step, dict):
                 _error(errors, "invalid_type", path, "step evidence must be an object")
                 continue
+
+            number = step.get("number")
+            if not _positive_int(number):
+                _error(errors, "invalid_step_number", f"{path}.number", "step number must be a positive integer")
+            else:
+                if number in seen_numbers:
+                    _error(errors, "duplicate_step_number", f"{path}.number", "step numbers must be unique")
+                seen_numbers.add(number)
+                if previous_step_number is not None and number <= previous_step_number:
+                    _error(
+                        errors,
+                        "invalid_step_order",
+                        f"{path}.number",
+                        "step numbers must increase in response order",
+                    )
+                previous_step_number = number
+
             name = step.get("name")
             if not isinstance(name, str) or not name:
                 _error(errors, "invalid_step_name", f"{path}.name", "step name must be a non-empty string")
@@ -163,6 +220,7 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
             seen_names.add(name)
             positions.setdefault(name, index)
 
+        required_times: dict[str, tuple[datetime | None, datetime | None]] = {}
         for required_name in REQUIRED_STEP_NAMES:
             if required_name not in positions:
                 _error(
@@ -173,13 +231,27 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
                 )
                 continue
             step = steps[positions[required_name]]
+            step_path = f"$.jobs.jobs[0].steps[{positions[required_name]}]"
             if step.get("status") != "completed" or step.get("conclusion") != "success":
                 _error(
                     errors,
                     "required_step_not_successful",
-                    f"$.jobs.jobs[0].steps[{positions[required_name]}]",
+                    step_path,
                     f"{required_name!r} must complete successfully",
                 )
+            started_at = _parse_utc_timestamp(step.get("started_at"), f"{step_path}.started_at", errors)
+            completed_at = _parse_utc_timestamp(step.get("completed_at"), f"{step_path}.completed_at", errors)
+            required_times[required_name] = (started_at, completed_at)
+            if started_at is not None and completed_at is not None and completed_at < started_at:
+                _error(errors, "invalid_time_order", f"{step_path}.completed_at", "must not be before started_at")
+            if (
+                job_started_at is not None
+                and job_completed_at is not None
+                and started_at is not None
+                and completed_at is not None
+                and (started_at < job_started_at or completed_at > job_completed_at)
+            ):
+                _error(errors, "step_time_mismatch", step_path, "required step times must be inside the job lifetime")
         if MONITOR_STEP_NAME in positions and CHECKPOINT_STEP_NAME in positions:
             if positions[MONITOR_STEP_NAME] >= positions[CHECKPOINT_STEP_NAME]:
                 _error(
@@ -188,6 +260,43 @@ def validate_workflow_sync_evidence(run: Any, jobs_payload: Any, receipt: Any) -
                     "$.jobs.jobs[0].steps",
                     "the checkpoint step must follow the monitor step",
                 )
+            monitor_times = required_times.get(MONITOR_STEP_NAME)
+            checkpoint_times = required_times.get(CHECKPOINT_STEP_NAME)
+            if monitor_times and checkpoint_times:
+                monitor_completed = monitor_times[1]
+                checkpoint_started = checkpoint_times[0]
+                if (
+                    monitor_completed is not None
+                    and checkpoint_started is not None
+                    and checkpoint_started < monitor_completed
+                ):
+                    _error(
+                        errors,
+                        "invalid_step_time_order",
+                        "$.jobs.jobs[0].steps",
+                        "the checkpoint step must not start before the monitor step completes",
+                    )
+
+    if receipt_validation["valid"] and isinstance(receipt, dict) and isinstance(receipt.get("run"), dict):
+        try:
+            receipt_started_at = datetime.strptime(receipt["run"]["started_at"], "%Y-%m-%dT%H:%M:%SZ")
+            receipt_completed_at = datetime.strptime(receipt["run"]["completed_at"], "%Y-%m-%dT%H:%M:%SZ")
+        except (KeyError, TypeError, ValueError):
+            receipt_started_at = None
+            receipt_completed_at = None
+        if (
+            job_started_at is not None
+            and job_completed_at is not None
+            and receipt_started_at is not None
+            and receipt_completed_at is not None
+            and (receipt_started_at < job_started_at or receipt_completed_at > job_completed_at)
+        ):
+            _error(
+                errors,
+                "receipt_time_mismatch",
+                "$.receipt.run",
+                "receipt run times must be inside the Actions job lifetime",
+            )
 
     result["valid"] = not errors
     return result

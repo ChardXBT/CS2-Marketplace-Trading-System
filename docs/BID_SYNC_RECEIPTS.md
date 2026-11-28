@@ -202,9 +202,11 @@ following agree:
 - the job has executed steps, so a zero-step runner provisioning or billing
   failure can never be read as a successful sync;
 - `Run the monitor script` and `Checkpoint runtime changes` are both present,
-  ordered, completed and successful;
+  ordered, completed and successful, with positive increasing step numbers and
+  internally ordered UTC timestamp evidence inside the job lifetime;
 - the receipt is valid complete-scan evidence with the required snapshot
-  output descriptors.
+  output descriptors, and its run timestamps are inside the Actions job
+  lifetime.
 
 A green top-level workflow conclusion by itself is not accepted as proof of a
 sync. Retried runs are valid only when the receipt attempt matches the Actions

@@ -20,7 +20,10 @@ def redact_secrets(value: str, environment: dict[str, str] | None = None) -> str
         "DISCORD_WEBHOOK_URL",
         "DISCORD_LOG_WEBHOOK_URL",
     ):
-        secret = str(env.get(name, "") or "").strip()
+        configured_secret = str(env.get(name, "") or "")
+        secret = configured_secret.strip()
+        if configured_secret:
+            secrets.add(configured_secret)
         if secret:
             secrets.add(secret)
         if "WEBHOOK" in name and secret:

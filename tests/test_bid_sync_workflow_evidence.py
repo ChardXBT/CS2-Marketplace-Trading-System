@@ -31,14 +31,20 @@ def successful_run():
     }
 
 
-def step(name, conclusion="success", number=1):
+def step(
+    name,
+    conclusion="success",
+    number=1,
+    started_at="2026-01-02T03:04:05Z",
+    completed_at="2026-01-02T03:05:05Z",
+):
     return {
         "name": name,
         "status": "completed",
         "conclusion": conclusion,
         "number": number,
-        "started_at": "2026-01-02T03:04:05Z",
-        "completed_at": "2026-01-02T03:05:05Z",
+        "started_at": started_at,
+        "completed_at": completed_at,
     }
 
 
@@ -58,7 +64,12 @@ def successful_jobs_payload():
                 "steps": [
                     step("Checkout repository code", number=1),
                     step(MONITOR_STEP, number=2),
-                    step(CHECKPOINT_STEP, number=3),
+                    step(
+                        CHECKPOINT_STEP,
+                        number=3,
+                        started_at="2026-01-02T03:05:05Z",
+                        completed_at="2026-01-02T03:06:05Z",
+                    ),
                 ],
             }
         ],
@@ -181,6 +192,92 @@ class WorkflowEvidenceTests(unittest.TestCase):
         run, jobs_payload, receipt = valid_evidence()
         jobs_payload["jobs"][0]["run_id"] = 4242424243
         self.assert_invalid(run, jobs_payload, receipt, "job_run_mismatch")
+
+    def test_missing_duplicate_and_out_of_order_step_numbers_fail_closed(self):
+        run, jobs_payload, receipt = valid_evidence()
+        for item in jobs_payload["jobs"][0]["steps"]:
+            del item["number"]
+        self.assert_invalid(run, jobs_payload, receipt, "invalid_step_number")
+
+        run, jobs_payload, receipt = valid_evidence()
+        for item in jobs_payload["jobs"][0]["steps"]:
+            item["number"] = 1
+        self.assert_invalid(run, jobs_payload, receipt, "duplicate_step_number")
+
+        run, jobs_payload, receipt = valid_evidence()
+        steps = jobs_payload["jobs"][0]["steps"]
+        steps[1]["number"], steps[2]["number"] = steps[2]["number"], steps[1]["number"]
+        self.assert_invalid(run, jobs_payload, receipt, "invalid_step_order")
+
+    def test_missing_malformed_and_out_of_order_evidence_timestamps_fail_closed(self):
+        run, jobs_payload, receipt = valid_evidence()
+        del run["created_at"]
+        self.assert_invalid(run, jobs_payload, receipt, "missing_timestamp")
+
+        run, jobs_payload, receipt = valid_evidence()
+        run["created_at"] = "2026-01-02T03:04:05+01:00"
+        self.assert_invalid(run, jobs_payload, receipt, "timestamp_must_be_utc")
+
+        run, jobs_payload, receipt = valid_evidence()
+        run["updated_at"] = "2026-01-02T03:04:04Z"
+        self.assert_invalid(run, jobs_payload, receipt, "invalid_time_order")
+
+        run, jobs_payload, receipt = valid_evidence()
+        del jobs_payload["jobs"][0]["started_at"]
+        self.assert_invalid(run, jobs_payload, receipt, "missing_timestamp")
+
+        run, jobs_payload, receipt = valid_evidence()
+        for item in jobs_payload["jobs"][0]["steps"]:
+            if item["name"] == MONITOR_STEP:
+                del item["completed_at"]
+        self.assert_invalid(run, jobs_payload, receipt, "missing_timestamp")
+
+        run, jobs_payload, receipt = valid_evidence()
+        for item in jobs_payload["jobs"][0]["steps"]:
+            if item["name"] == MONITOR_STEP:
+                item["completed_at"] = "2026-01-02T03:06:05Z"
+            elif item["name"] == CHECKPOINT_STEP:
+                item["started_at"] = "2026-01-02T03:05:55Z"
+        self.assert_invalid(run, jobs_payload, receipt, "invalid_step_time_order")
+
+    def test_receipt_and_step_times_must_be_inside_actions_job_lifetime(self):
+        for field, value in (
+            ("started_at", "2020-01-02T03:04:05Z"),
+            ("completed_at", "2030-01-02T03:07:05Z"),
+        ):
+            run, jobs_payload, receipt = valid_evidence()
+            receipt["run"][field] = value
+            self.assert_invalid(run, jobs_payload, receipt, "receipt_time_mismatch")
+
+        run, jobs_payload, receipt = valid_evidence()
+        jobs_payload["jobs"][0]["started_at"] = "2026-01-01T00:00:00Z"
+        self.assert_invalid(run, jobs_payload, receipt, "job_time_mismatch")
+
+        run, jobs_payload, receipt = valid_evidence()
+        for item in jobs_payload["jobs"][0]["steps"]:
+            if item["name"] == CHECKPOINT_STEP:
+                item["completed_at"] = "2026-01-02T03:07:06Z"
+        self.assert_invalid(run, jobs_payload, receipt, "step_time_mismatch")
+
+    def test_numeric_identity_edges_fail_closed(self):
+        for field, value in (
+            ("id", 0),
+            ("id", -1),
+            ("id", 2**53),
+            ("id", True),
+            ("run_attempt", 0),
+            ("run_attempt", -1),
+            ("run_attempt", 2**53),
+            ("run_attempt", True),
+        ):
+            run, jobs_payload, receipt = valid_evidence()
+            run[field] = value
+            self.assert_invalid(run, jobs_payload, receipt, "invalid_run_id" if field == "id" else "invalid_attempt")
+
+        for value in (0, -1, 2**53, True):
+            run, jobs_payload, receipt = valid_evidence()
+            jobs_payload["jobs"][0]["steps"][0]["number"] = value
+            self.assert_invalid(run, jobs_payload, receipt, "invalid_step_number")
 
     def test_incomplete_or_nonsuccess_run_status_is_rejected(self):
         for status, conclusion in (

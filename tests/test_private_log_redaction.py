@@ -48,6 +48,15 @@ class PrivateLogRedactionTests(unittest.TestCase):
         )
         self.assertEqual(text, "before [REDACTED] after")
 
+    def test_exact_configured_secret_is_redacted_without_trimming(self):
+        for secret in ("   ", "  abc  ", "\tsecret-é\n"):
+            text = send_private_log.redact_secrets(
+                f"before|{secret}|after",
+                {"CSFLOAT_API_KEY": secret},
+            )
+            self.assertNotIn(secret, text)
+            self.assertEqual(text, "before|[REDACTED]|after")
+
     def test_malformed_webhook_secret_does_not_break_redaction(self):
         text = send_private_log.redact_secrets(
             "malformed http://[ remains redacted",
