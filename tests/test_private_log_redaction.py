@@ -48,6 +48,13 @@ class PrivateLogRedactionTests(unittest.TestCase):
         )
         self.assertEqual(text, "before [REDACTED] after")
 
+    def test_malformed_webhook_secret_does_not_break_redaction(self):
+        text = send_private_log.redact_secrets(
+            "malformed http://[ remains redacted",
+            {"DISCORD_WEBHOOK_URL": "http://["},
+        )
+        self.assertEqual(text, "malformed [REDACTED] remains redacted")
+
 
 if __name__ == "__main__":
     unittest.main()

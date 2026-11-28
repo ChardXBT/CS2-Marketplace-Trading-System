@@ -24,7 +24,10 @@ def redact_secrets(value: str, environment: dict[str, str] | None = None) -> str
         if secret:
             secrets.add(secret)
         if "WEBHOOK" in name and secret:
-            parsed = urllib.parse.urlsplit(secret)
+            try:
+                parsed = urllib.parse.urlsplit(secret)
+            except ValueError:
+                continue
             for fragment in (
                 parsed.path,
                 parsed.path.rsplit("/", 1)[-1],
