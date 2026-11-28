@@ -19,6 +19,9 @@ def redact_secrets(value: str, environment: dict[str, str] | None = None) -> str
         "CSFLOAT_API_KEY",
         "DISCORD_WEBHOOK_URL",
         "DISCORD_LOG_WEBHOOK_URL",
+        "GIT_CRYPT_KEY",
+        "GITHUB_TOKEN",
+        "GH_PUSH_TOKEN",
     ):
         configured_secret = str(env.get(name, "") or "")
         secret = configured_secret.strip()

@@ -57,6 +57,18 @@ class PrivateLogRedactionTests(unittest.TestCase):
             self.assertNotIn(secret, text)
             self.assertEqual(text, "before|[REDACTED]|after")
 
+    def test_workflow_credential_helpers_are_redacted_defense_in_depth(self):
+        env = {
+            "GIT_CRYPT_KEY": "git-crypt-test-secret",
+            "GITHUB_TOKEN": "github-token-test-secret",
+            "GH_PUSH_TOKEN": "push-token-test-secret",
+        }
+        text = send_private_log.redact_secrets(
+            "git-crypt-test-secret github-token-test-secret push-token-test-secret",
+            env,
+        )
+        self.assertEqual(text, "[REDACTED] [REDACTED] [REDACTED]")
+
     def test_malformed_webhook_secret_does_not_break_redaction(self):
         text = send_private_log.redact_secrets(
             "malformed http://[ remains redacted",
