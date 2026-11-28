@@ -31,6 +31,9 @@ docs/images/** !filter !diff
 /tests/test_bid_sync_receipts.py !filter !diff
 /tests/fixtures/bid_sync_receipts/** !filter !diff
 /tools/bid_sync_receipt_contract.py !filter !diff
+/tests/test_bid_sync_workflow_evidence.py !filter !diff
+/tests/test_private_log_redaction.py !filter !diff
+/tools/bid_sync_workflow_evidence.py !filter !diff
 
 # Public, strategy-free documentation consistency tests. This file reads only
 # plaintext README/workflow version metadata and must remain reviewable on GitHub.

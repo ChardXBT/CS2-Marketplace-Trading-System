@@ -28,6 +28,7 @@ FIXED_ARTIFACT_PATHS = {
     "active_bid_prices_json": "data/active_bid_prices.json",
     "active_bid_prices_csv": "data/active_bid_prices.csv",
 }
+REQUIRED_COMPLETE_ARTIFACT_KINDS = set(FIXED_ARTIFACT_PATHS)
 
 TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -349,6 +350,16 @@ def validate_receipt(receipt: Any) -> dict[str, Any]:
             if not isinstance(sha256, str) or not SHA256_RE.fullmatch(sha256):
                 _error(errors, "invalid_sha256", f"{path_prefix}.sha256", "must be 64 lowercase hex characters")
             _check_nonnegative_int(artifact.get("bytes"), f"{path_prefix}.bytes", errors)
+
+        if isinstance(scan, dict) and scan.get("status") == "complete":
+            missing_required = sorted(REQUIRED_COMPLETE_ARTIFACT_KINDS - seen_kinds)
+            for kind in missing_required:
+                _error(
+                    errors,
+                    "missing_required_artifact",
+                    "$.artifacts",
+                    f"a complete sync receipt must describe {kind}",
+                )
 
     if isinstance(scan, dict) and scan.get("status") == "complete":
         result["scan_complete"] = not any(

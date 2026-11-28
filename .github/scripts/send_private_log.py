@@ -21,7 +21,7 @@ def redact_secrets(value: str, environment: dict[str, str] | None = None) -> str
         "DISCORD_LOG_WEBHOOK_URL",
     ):
         secret = str(env.get(name, "") or "").strip()
-        if len(secret) >= 8:
+        if secret:
             secrets.add(secret)
         if "WEBHOOK" in name and secret:
             parsed = urllib.parse.urlsplit(secret)
